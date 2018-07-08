@@ -133,7 +133,7 @@ int main(int argc, char *argv[], char *envp[])
 
   while (1)
   {
-    if ( size = read(soc, buf, sizeof(buf)) <= 0)
+    if ( (size = read(soc, buf, sizeof(buf))) <= 0)
     {
       perror("read");
     }
