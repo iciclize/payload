@@ -92,7 +92,7 @@ int PrintEtherHeader(struct ether_header *eh, FILE *fp)
   
   fprintf(fp, "ether_header------------------\n");
   fprintf(fp, "etherdhost=%s\n", my_ether_ntoa_r(eh->ether_dhost, buf, sizeof(buf)));
-  fprintf(fp, "etherdhost=%s\n", my_ether_ntoa_r(eh->ether_shost, buf, sizeof(buf)));
+  fprintf(fp, "ethershost=%s\n", my_ether_ntoa_r(eh->ether_shost, buf, sizeof(buf)));
   fprintf(fp, "ether_type=%02x", ntohs(eh->ether_type));
 
   switch( ntohs(eh->ether_type) )
