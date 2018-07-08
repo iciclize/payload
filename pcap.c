@@ -9,6 +9,9 @@
 #include <netpacket/packet.h>
 #include <netinet/if_ether.h>
 
+#include "pcap.h"
+#include "analyze.h"
+
 int InitRawSocket(char *device, int promiscFlag, int ipOnly)
 {
   struct ifreq ifreq;
@@ -117,11 +120,11 @@ int PrintEtherHeader(struct ether_header *eh, FILE *fp)
 int main(int argc, char *argv[], char *envp[])
 {
   int soc, size;
-  u_char buf[2048];
+  u_char buf[65535];
 
   if (argc <= 1)
   {
-    fprintf(stderr, "ltest device-name\n");
+    fprintf(stderr, "pcap device-name\n");
     return 1;
   }
 
@@ -133,24 +136,12 @@ int main(int argc, char *argv[], char *envp[])
 
   while (1)
   {
-    struct sockaddr_ll from;
-    socklen_t fromlen;
-    memset(&from, 0, sizeof(from));
-
-    fromlen = sizeof(from);
-    if ( (size = recvfrom(soc, buf, sizeof(buf), 0, (struct sockaddr *)&from, &fromlen)) <= 0)
+    if ( ( size = read(soc, buf, sizeof(buf)) ) <= 0)
     {
       perror("read");
     }
     else
     {
-      printf("sll_family=%d\n", from.sll_family);
-      printf("sll_protocol=%d\n", from.sll_protocol);
-      printf("sll_ifindex=%d\n", from.sll_ifindex);
-      printf("sll_hatype=%d\n", from.sll_hatype);
-      printf("sll_pkttype=%d\n", from.sll_pkttype);
-      printf("sll_halen=%d\n", from.sll_halen);
-      printf("sll_addr=%02x:%02x:%02x:%02x:%02x:%02x\n", from.sll_addr[0], from.sll_addr[1], from.sll_addr[2], from.sll_addr[3], from.sll_addr[4], from.sll_addr[5]);
       AnalyzePacket(buf, size);
     }
   }
