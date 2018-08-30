@@ -13,76 +13,60 @@ int InitRawSocket(char *device, int promiscFlag, int ipOnly)
 {
   struct ifreq ifreq;
   struct sockaddr_ll sa;
-  int soc;
+  int sock;
 
-  if (ipOnly) {
-    if ( ( soc = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_IP)) ) < 0 )
-    {
-      perror("socket");
-      return -1;
+  int protocolID = ipOnly ? htons(ETH_P_IP) : htons(ETH_P_ALL);
 
-    }
-  }
-  else
+  if ( ( sock = socket(PF_PACKET, SOCK_RAW, protocolID) ) < 0 )
   {
-    if ( ( soc = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL)) ) < 0 ) {
-      perror("socket");
-      return -1;
-    }
+    perror("socket() failed.");
+    return -1;
   }
 
   memset(&ifreq, 0, sizeof(struct ifreq));
   strncpy(ifreq.ifr_name, device, sizeof(ifreq.ifr_name) - 1);
 
-  if (ioctl(soc, SIOCGIFINDEX, &ifreq) < 0)
+  if (ioctl(sock, SIOCGIFINDEX, &ifreq) < 0)
   {
-    perror("ioctl");
-    close(soc);
+    perror("ioctl() failed.");
+    close(sock);
 
     return -1;
   }
 
   sa.sll_family = PF_PACKET;
-  if (ipOnly)
-  {
-    sa.sll_protocol = htons(ETH_P_IP);
-  }
-  else
-  {
-    sa.sll_protocol = htons(ETH_P_ALL);
-  }
+  sa.sll_protocol = protocolID;
   sa.sll_ifindex = ifreq.ifr_ifindex;
-  if (bind(soc, (struct sockaddr *)&sa, sizeof(sa)) < 0)
+  if (bind(sock, (struct sockaddr *)&sa, sizeof(sa)) < 0)
   {
-    perror("bind");
-    close(soc);
+    perror("bind() failed.");
+    close(sock);
     return -1;
   }
 
   if (promiscFlag) {
-    if (ioctl(soc, SIOCGIFFLAGS, &ifreq) < 0 )
+    if (ioctl(sock, SIOCGIFFLAGS, &ifreq) < 0 )
     {
-      perror("ioctl");
-      close(soc);
+      perror("ioctl() failed.");
+      close(sock);
       return -1;
     }
 
-    ifreq.ifr_flags | IFF_PROMISC;
-    if (ioctl(soc, SIOCSIFFLAGS, &ifreq) < 0)
+    ifreq.ifr_flags = ifreq.ifr_flags | IFF_PROMISC;
+    if (ioctl(sock, SIOCSIFFLAGS, &ifreq) < 0)
     {
-      perror("ioctl");
-      close(soc);
+      perror("ioctl failed.");
+      close(sock);
       return -1;
     }
   }
 
-  return soc;
+  return sock;
 }
 
 char *my_ether_ntoa_r(u_char *hwaddr, char *buf, socklen_t size)
 {
-  snprintf(buf, size, "%02x:%02x;%02x:%02x:%02x:%02x", hwaddr[0], hwaddr[1], hwaddr[2], hwaddr[3], hwaddr[4], hwaddr[5]);
-
+  snprintf(buf, size, "%02x:%02x:%02x:%02x:%02x:%02x", hwaddr[0], hwaddr[1], hwaddr[2], hwaddr[3], hwaddr[4], hwaddr[5]);
   return buf;
 }
 
@@ -91,8 +75,8 @@ int PrintEtherHeader(struct ether_header *eh, FILE *fp)
   char buf[80];
   
   fprintf(fp, "ether_header------------------\n");
-  fprintf(fp, "etherdhost=%s\n", my_ether_ntoa_r(eh->ether_dhost, buf, sizeof(buf)));
-  fprintf(fp, "ethershost=%s\n", my_ether_ntoa_r(eh->ether_shost, buf, sizeof(buf)));
+  fprintf(fp, "ether_dhost=%s\n", my_ether_ntoa_r(eh->ether_dhost, buf, sizeof(buf)));
+  fprintf(fp, "ether_shost=%s\n", my_ether_ntoa_r(eh->ether_shost, buf, sizeof(buf)));
   fprintf(fp, "ether_type=%02x", ntohs(eh->ether_type));
 
   switch( ntohs(eh->ether_type) )
@@ -116,16 +100,18 @@ int PrintEtherHeader(struct ether_header *eh, FILE *fp)
 
 int main(int argc, char *argv[], char *envp[])
 {
-  int soc, size;
+  int sock, size;
   u_char buf[2048];
 
+  /* Arguments check */
   if (argc <= 1)
   {
     fprintf(stderr, "ltest device-name\n");
     return 1;
   }
 
-  if ( (soc = InitRawSocket(argv[1], 0, 0)) == -1 )
+  /* Init a socket */
+  if ( (sock = InitRawSocket(argv[1], 0, 0)) == -1 )
   {
     fprintf(stderr, "InitRawSocket:error:%s\n", argv[1]);
     return -1;
@@ -133,9 +119,9 @@ int main(int argc, char *argv[], char *envp[])
 
   while (1)
   {
-    if ( (size = read(soc, buf, sizeof(buf))) <= 0)
+    if ( (size = read(sock, buf, sizeof(buf))) <= 0 )
     {
-      perror("read");
+      perror("read() failed.");
     }
     else
     {
@@ -150,7 +136,7 @@ int main(int argc, char *argv[], char *envp[])
     }
   }
 
-  close(soc);
+  close(sock);
 
   return 0;
 }
