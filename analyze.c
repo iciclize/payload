@@ -112,11 +112,22 @@ int AnalyzePacket(u_char *data, int size)
   ptr += sizeof(struct ether_header);
   lest -= sizeof(struct ether_header);
 
-  if (ntohs(eh->ether_type) == ETHERTYPE_IP)
+  u_int16_t ether_type = ntohs(eh->ether_type);
+
+  fprintf(stderr, "Packet[%dbytes]\n", size);
+  PrintEtherHeader(eh, stdout);
+
+  switch (ether_type)
   {
-    fprintf(stderr, "Packet[%dbytes]\n", size);
-    PrintEtherHeader(eh, stdout);
-    AnalyzeIp(ptr, lest);
+    case ETHERTYPE_ARP:
+      AnalyzeArp(ptr, lest);
+      break;
+    case ETHERTYPE_IP:
+      AnalyzeIp(ptr, lest);
+      break;
+    case ETHERTYPE_IPV6:
+      AnalyzeIpv6(ptr, lest);
+      break;
   }
 
   return 0;
@@ -142,6 +153,7 @@ int AnalyzeIp(u_char *data, int size)
   }
 
   iphdr = (struct iphdr *)ptr;
+
   ptr += sizeof(struct iphdr);
   lest -= sizeof(struct iphdr);
 
@@ -224,7 +236,7 @@ int AnalyzeTcp(u_char *data, int size)
   lest -= sizeof(struct tcphdr);
 
   PrintTcp(tcphdr, stdout);
-
+  
   return 0;
 }
 
