@@ -64,40 +64,6 @@ int InitRawSocket(char *device, int promiscFlag, int ipOnly)
   return sock;
 }
 
-char *my_ether_ntoa_r(u_char *hwaddr, char *buf, socklen_t size)
-{
-  snprintf(buf, size, "%02x:%02x:%02x:%02x:%02x:%02x", hwaddr[0], hwaddr[1], hwaddr[2], hwaddr[3], hwaddr[4], hwaddr[5]);
-  return buf;
-}
-
-int PrintEtherHeader(struct ether_header *eh, FILE *fp)
-{
-  char buf[80];
-  
-  fprintf(fp, "ether_header------------------\n");
-  fprintf(fp, "ether_dhost=%s\n", my_ether_ntoa_r(eh->ether_dhost, buf, sizeof(buf)));
-  fprintf(fp, "ether_shost=%s\n", my_ether_ntoa_r(eh->ether_shost, buf, sizeof(buf)));
-  fprintf(fp, "ether_type=%02x", ntohs(eh->ether_type));
-
-  switch( ntohs(eh->ether_type) )
-  {
-    case ETH_P_IP:
-      fprintf(fp, "(IP)\n");
-      break;
-    case ETH_P_IPV6:
-      fprintf(fp, "(IPv6)\n");
-      break;
-    case ETH_P_ARP:
-      fprintf(fp, "(ARP)\n");
-      break;
-    default:
-      fprintf(fp, "(unknown\n");
-      break;
-  }
-
-  return 0;
-}
-
 int main(int argc, char *argv[], char *envp[])
 {
   int sock, size;
@@ -117,27 +83,6 @@ int main(int argc, char *argv[], char *envp[])
     return -1;
   }
 
-  /*
-  while (1)
-  {
-    if ( (size = read(sock, buf, sizeof(buf))) <= 0 )
-    {
-      perror("read() failed.");
-    }
-    else
-    {
-      if (size >= sizeof(struct ether_header))
-      {
-        PrintEtherHeader((struct ether_header *)buf, stdout);
-      }
-      else
-      {
-        fprintf(stderr, "read size(%d) < %d\n", size, sizeof(struct ether_header));
-      }
-    }
-  }
-  */
-
   while (1)
   {
     struct sockaddr_ll  from;
@@ -151,13 +96,13 @@ int main(int argc, char *argv[], char *envp[])
       perror("recvfrom() failed.");
     }
     else {
-      printf(sll_family=%d¥n", from.sll_family);
-      printf("sll_protocol=%d¥n", from.sll_protocol);
-      printf("sll_ifindex=%d¥n", from.sll_ifindex);
-      printf("sll_hatype=%d¥n", from.sll_hatype);
-      printf("sll_pkttype=%d¥n", from.sll_pkttype);
-      printf("sll_halen=%d¥n", from.sll_halen);
-      printf("sll_addr=%02x:%02x:%02x:%02x:%02x:%02x¥n",
+      printf("sll_family=%d\n", from.sll_family);
+      printf("sll_protocol=%d\n", from.sll_protocol);
+      printf("sll_ifindex=%d\n", from.sll_ifindex);
+      printf("sll_hatype=%d\n", from.sll_hatype);
+      printf("sll_pkttype=%d\n", from.sll_pkttype);
+      printf("sll_halen=%d\n", from.sll_halen);
+      printf("sll_addr=%02x:%02x:%02x:%02x:%02x:%02x\n",
         from.sll_addr[0],
         from.sll_addr[1],
         from.sll_addr[2],
