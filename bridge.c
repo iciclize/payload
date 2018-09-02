@@ -35,7 +35,7 @@ int DebugPrintf(char *fmt, ...)
     va_list args;
 
     va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
+    vfprintf(stdout, fmt, args);
     va_end(args);
   }
 
@@ -76,7 +76,7 @@ int printPacket(int deviceNo, u_char *data, int size)
 
   if (Param.DebugOut)
   {
-    PrintEtherHeader(eh, stderr);
+    PrintEtherHeader(eh, stdout);
     switch (ether_type)
     {
       case ETHERTYPE_ARP:
@@ -120,21 +120,22 @@ int Bridge(void)
         for (i = 0; i <= 1; ++i)
         {
           if( (targets[i].revents & (POLLIN | POLLERR)) == 0 )
-            break;
+            continue;
 
           if ( (size = read(Device[i].sock, buf, sizeof(buf))) <= 0 )
           {
             perror("read");
-            break;
+            continue;
           }
           else if ( printPacket(i, buf, size) == -1 )
-            break;
+            continue;
           else if ( (size = write(Device[(!i)].sock, buf, size)) <= 0 )
           {
             perror("write");
-            break;
+            continue;
           }
         }
+        break;
     }
   }
 

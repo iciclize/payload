@@ -17,6 +17,28 @@
 
 #include "print.h"
 
+void dumpPayload(FILE *fp, char *label, u_char *data, int size)
+{
+  int i;
+
+  fprintf(fp, "\n=============== %s ===============\n", label);
+  for (i = 0; i < size && i < 300; ++i)
+    fprintf(fp, "%02x ", data[i]);
+
+  fputs("\n- - - - - - - - - - - - - - -\n", fp);
+
+  for (i = 0; i < size && i < 300; ++i)
+  {
+    if ( (data[i] < 0x0A || 0x7E < data[i])
+      || (0x0D < data[i] && data[i] < 0x20) ) 
+      fprintf(fp, "?");
+    else
+      fprintf(fp, "%c", data[i]);
+  }
+
+  fputs("", fp);
+}
+
 char *my_ether_ntoa_r(u_char *hwaddr, char *buf, socklen_t size)
 {
   snprintf(buf, size, "%02x:%02x:%02x:%02x:%02x:%02x",
@@ -66,7 +88,7 @@ int PrintEtherHeader(struct ether_header *eh, FILE *fp)
       fprintf(fp, "(ARP)\n");
       break;
     default:
-      fprintf(fp, "(unknown\n");
+      fprintf(fp, "(unknown)\n");
       break;
   }
 
@@ -118,7 +140,7 @@ int PrintIpHeader(struct iphdr *iphdr, u_char *option, int optionLen, FILE *fp)
     fprintf(fp, "(undefined), ");
   }
   fprintf(fp, "check=%x\n", iphdr->check);
-  fprintf(fp, "saddr=%s, ", ip_ip2str(iphdr->saddr, buf, sizeof(buf)));
+  fprintf(fp, "saddr=%s >>>>>> ", ip_ip2str(iphdr->saddr, buf, sizeof(buf)));
   fprintf(fp, "daddr=%s\n", ip_ip2str(iphdr->daddr, buf, sizeof(buf)));
   if (optionLen > 0)
   {
@@ -285,7 +307,7 @@ int PrintArp(struct ether_arp *arp, FILE *fp)
   fprintf(fp, "arp_hrd=%u", ntohs(arp->arp_hrd));
   
   if(ntohs(arp->arp_hrd) <= 23)
-    fprintf(fp, "(%s),", hrd[ntohs(arp->arp_hrd)]);
+    fprintf(fp, "(%s), ", hrd[ntohs(arp->arp_hrd)]);
   else
     fprintf(fp, "(undefined), ");
 

@@ -114,7 +114,7 @@ int AnalyzePacket(u_char *data, int size)
 
   u_int16_t ether_type = ntohs(eh->ether_type);
 
-  fprintf(stderr, "Packet[%dbytes]\n", size);
+  fprintf(stdout, "Packet[%dbytes]\n", size);
   PrintEtherHeader(eh, stdout);
 
   switch (ether_type)
@@ -199,6 +199,7 @@ int AnalyzeIp(u_char *data, int size)
       return -1;
     }
     AnalyzeTcp(ptr, lest);
+    dumpPayload(stdout, "TCP", ptr, lest);
   }
   else if (iphdr->protocol == IPPROTO_UDP)
   {
@@ -211,6 +212,11 @@ int AnalyzeIp(u_char *data, int size)
       return -1;
     }
     AnalyzeUdp(ptr, lest);
+    dumpPayload(stdout, "UDP", ptr, lest);
+  }
+  else
+  {
+    dumpPayload(stdout, "IPv4", ptr, lest);
   }
 
   return 0;
@@ -236,6 +242,7 @@ int AnalyzeTcp(u_char *data, int size)
   lest -= sizeof(struct tcphdr);
 
   PrintTcp(tcphdr, stdout);
+  dumpPayload(stdout, "TCP", ptr, lest);
   
   return 0;
 }
@@ -260,6 +267,7 @@ int AnalyzeUdp(u_char *data, int size)
   lest -= sizeof(struct udphdr);
 
   PrintUdp(udphdr, stdout);
+  dumpPayload(stdout, "UDP", ptr, lest);
 
   return 0;
 }
@@ -285,7 +293,7 @@ int AnalyzeIpv6(u_char *data, int size)
 
   PrintIp6Header(ip6, stdout);
 
-  if (ip6->ip6_nxt == IPPROTO_IPV6)
+  if (ip6->ip6_nxt == IPPROTO_ICMPV6)
   {
     len = ntohs(ip6->ip6_plen);
     if (checkIP6DATAchecksum(ip6, ptr, len) == 0)
@@ -304,6 +312,7 @@ int AnalyzeIpv6(u_char *data, int size)
       return -1;
     }
     AnalyzeTcp(ptr, lest);
+    dumpPayload(stdout, "TCP", ptr, lest);
   }
   else if (ip6->ip6_nxt == IPPROTO_UDP)
   {
@@ -314,6 +323,7 @@ int AnalyzeIpv6(u_char *data, int size)
       return -1;
     }
     AnalyzeUdp(ptr, lest);
+    dumpPayload(stdout, "UDP", ptr, lest);
   }
 
   return 0;
