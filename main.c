@@ -8,24 +8,31 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/if_ether.h>
+#include <netinet/ip.h>
+#include <netinet/ip_icmp.h>
+#include <pthread.h>
 
 #include "netutil.h"
+#include "base.h"
+#include "ip2mac.h"
+#include "sendBuf.h"
 
 typedef struct {
   char *Device1;
   char *Device2;
   int   DebugOut;
+  char *nextRouter;
 } PARAM;
 
-PARAM Param = { "eth0", "eth1", 1 };
+PARAM Param = { "eth0", "eth1", 0, "192.168.10.221" };
 
 typedef struct {
   int sock;
 } DEVICE;
 
-DEVICE Device[2];
-
-int EndFlag = 0;
+DEVICE          Device[2];
+struct in_addr  NextRouter;
+int             EndFlag = 0;
 
 int DebugPrintf(char *fmt, ...)
 {
@@ -47,6 +54,10 @@ int DebugPerror(char *msg)
     fprintf(stderr, "%s : %s\n", msg, strerror(errno));
 
   return 0;
+}
+
+int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *iphdr, u_char *data, int size)
+{
 }
 
 int AnalyzePacket(int deviceNo, u_char *data, int size)
