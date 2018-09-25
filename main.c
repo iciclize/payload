@@ -58,6 +58,56 @@ int DebugPerror(char *msg)
 
 int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *iphdr, u_char *data, int size)
 {
+  struct ether_header reh;
+  struct iphdr        rih;
+  struct icmp         icmp;
+  u_char             *ipptr;
+  u_char             *ptr,
+                      buf[1500];
+  int                 len;
+
+  memcpy(reh.ether_dhost, eh->ether_shost, 6);
+  memcpy(reh.ether_shost, Device[deviceNo].hwaddr, 6);
+  reh.ether_type = htons(ETHERTYPE_IP);
+
+  rih.version  = 4;
+  rih.ihl      = 20 / 4;
+  rih.tos      = 0;
+  rih.tot_len  = htons(sizeof(struct icmp) + 64);
+  rih.id       = 0;
+  rih.frag_off = 0
+  rih.ttl      = 64;
+  rih.protocol = IPPROTO_ICMP;
+  rih.check    = 0;
+  rih.saddr    = Device[deviceNo].addr.s_addr;
+  rih.daddr    = iphdr->saddr;
+
+  rih.check = checksum((u_char *) &rih, sizeof(struct iphdr));
+
+  icmp.icmp_type  = ICMP_TIME_EXCEEDED;
+  icmp.icmp_code  = ICMP_TIMXCEED_INTRANS;
+  icmp.icmp_cksum = 0;
+  icmp.icmp_void  = 0;
+
+  ipptr = data + sizeof(struct ether_header);
+
+  icmp.icmp_cksum = checksum2((u_char *) &icmp, 8, ipptr, 64);
+
+  ptr = buf;
+  memcpy(ptr, &reh, sizeof(struct ether_header));
+  ptr += sizeof(struct ether_header);
+  memcpy(ptr, &rih, sizeof(struct iphdr));
+  ptr += sizeof(struct iphdr);
+  memcpt(ptr, &icmp, 8);
+  ptr += 8;
+  memcpy(ptr, ipptr, 64);
+  ptr += 64;
+  len = ptr - buf;
+
+  DebugPrintf("write:SendIcmpTimeExceeded:[%d] %dbytes\n", deviceNo, len);
+  write(Device[deviceNo].sock, buf, len);
+
+  return 0;
 }
 
 int AnalyzePacket(int deviceNo, u_char *data, int size)
