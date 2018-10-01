@@ -114,7 +114,10 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
 {
   u_char *ptr;
   int     lest;
-  struct ether_header *eh;
+  struct  ether_header *eh;
+  char    buf[80];
+  int     tno;
+  u_char  hwaddr[6];
 
   ptr = data;
   lest = size;
@@ -128,7 +131,139 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
   eh = (struct ether_header *)ptr;
   ptr += sizeof(struct ether_header);
   lest -= sizeof(struct ether_header);
-  DebugPrintf("[%d]", deviceNo);
+
+  if (memcpy(&eh->ether_dhost, Device[deviceNo].hwaddr, 6) != 0)
+  {
+    DebugPrintf("[%d]:dhost not match %s\n", deviceNo, my_ether_ntoa_r((u_char *)&eh->ether_dhost, buf, sizeof(buf)));
+    return -1;
+  }
+
+  if (ntohs(eh->ether_type) == ETHERTYPE_ARP)
+  {
+    struct ether_arp  *arp;
+    if (lest < sizeof(struct ether_arp))
+    {
+      DebugPrintf("[%d]:lest(%d) < sizeof(struct ether_arp)\n", deviceNo, lest);
+      return -1;
+    }
+
+    arp  = (struct ether_arp *)ptr;
+    ptr  += sizeof(struct ether_arp);
+    lest -= sizeof(struct ether_arp);
+
+    if (arp->arp_op == htons(ARPOP_REQUEST))
+    {
+      DebugPrintf("[%d]recv:ARP REQUEST:%dbytes\n", deviceNo, size);
+      Ip2Mac(deviceNo, *(in_addr_t *)arp->arp_spa, arp->arp_sha);
+    }
+
+    if (arp->arp_op == htons(ARPOP_REPLY))
+    {
+      DebugPrintf("[%d]recv: ARP REPLY:%dbytes\n", deviceNo, size);
+      Ip2Mac(deviceNo, *(in_addr_t *)arp->arp_spa, arp->arp_sha);
+    }
+    else if (ntohs(eh->ether_type) == ETHERTYPE_IP)
+    {
+      struct iphdr *iphdr;
+      u_char        option[1500];
+      int           optionLen;
+
+      if (lest < sizeof(struct iphdr))
+      {
+        DebugPrintf("[%d]:lest(%d) < sizeof(struct iphdr)\n", deviceNo, lest);
+        return -1;
+      }
+
+      iphdr = (struct iphdr *)ptr;
+      ptr  += sizeof(struct iphdr);
+      lest -= sizeof(struct iphdr);
+
+      optionLen = iphdr->ihl * 4 - sizeof(struct iphdr);
+      if (optionLen > 0)
+      {
+        if (optionLen >= 1500)
+        {
+          DebugPrintf("[%d]:IP optionLen(%d):too big\n", deviceNo, optionLen);
+          return -1;
+        }
+
+        memcpy(option, ptr, optionLen);
+        ptr  += optionLen;
+        lest -= optionLen;
+      }
+
+      if (checkIPchecksum(iphdr, option, optionLen) == 0)
+      {
+        DebugPrintf("[%d]:bad ip checksum\n", deviceNo);
+        fprintf(stderr, "IP checksum error\n");
+        return -1;
+      }
+
+      if (iphdr->ttl - 1 <= 0)
+      {
+        DebugPrintf("[%d]:iphdr->ttl <= 0 error\n", deviceNo);
+        SendIcmpTimeExceeded(deviceNo, eh, iphdr, data, size);
+        return -1;
+      }
+
+      tno = (!deviceNo);
+
+      if ( (iphdr->daddr & Device[tno].netmask.s_addr) == Device[tno].subet.s_addr )
+      {
+        IP2MAC *ip2mac;
+
+        DebugPrintf("[%d]:%s to TargetSegment\n", deviceNo, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
+
+        if (iphdr->daddr == Device[tno].addr.s_addr)
+        {
+          DebugPrintf("[%d]:recv:myaddr\n", deviceNo);
+          return 1;
+        }
+
+        ip2mac = Ip2Mac(tno, iphdr->daddr, NULL);
+        if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno != 0)
+        {
+          DebugPrintf("[%d]:Ip2Mac:error or sending\n", deviceNo);
+          AppendSendData(ip2mac, 1, iphdr->daddr, data, size);
+          return -1;
+        }
+        else {
+          memcpy(hwaddr, ip2mac->hwaddr, 6);
+        }
+      }
+      else
+      {
+        IP2MAC *ip2mac;
+
+        DebugOut("[%d]:%s to NextRouter\n", deviceNo, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
+
+        ip2mac = Ip2Mac(tno, NextRouter.s_addr, NULL);
+
+        if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno !=0)
+        {
+          DebugPrintf("[%d]:Ip2Mac:error or sending\n", deviceNo);
+          AppendSendData(ip2mac, 1, NextRouter.s_addr, data, size);
+          return -1;
+        }
+        else
+        {
+          memcpy(hwaddr, ip2mac->hwaddr, 6);
+        }
+      }
+
+      memcpy(eh->ether_dhost, hwaddr, 6);
+      memcpy(eh->ether_shost, Device[tno].hwaddr, 6);
+
+      iphdr->ttl--;
+      iphdr->check = 0;
+      iphdr->check = chesksum2((u_char *)iphdr, sizeof(struct iphdr), option, optionLen);
+
+      write(Device[tno].sock, data, size);
+    }
+
+    return 0;
+  }
+
 
   if (Param.DebugOut)
     PrintEtherHeader(eh, stderr);
