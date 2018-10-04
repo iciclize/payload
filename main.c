@@ -128,7 +128,7 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
   ptr += sizeof(struct ether_header);
   lest -= sizeof(struct ether_header);
 
-  if (memcpy(&eh->ether_dhost, Device[deviceNo].hwaddr, 6) != 0)
+  if (memcmp(&eh->ether_dhost, Device[deviceNo].hwaddr, 6) != 0)
   {
     DebugPrintf("[%d]:dhost not match %s\n", deviceNo, my_ether_ntoa_r((u_char *)&eh->ether_dhost, buf, sizeof(buf)));
     return -1;
