@@ -354,7 +354,9 @@ int BufferSend()
     while (1)
     {
       if ( GetSendReqData(&deviceNo, &ip2macNo) == -1 )
+      {
         break;
+      }
 
       BufferSendOne(deviceNo, &Ip2Macs[deviceNo].data[ip2macNo]);
     }

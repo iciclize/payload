@@ -377,7 +377,7 @@ int main(int argc, char *argv[], char *envp[])
   DebugPrintf("subnet=%s\n", my_inet_ntoa_r(&Device[0].subnet, buf, sizeof(buf)));
   DebugPrintf("netmask=%s\n", my_inet_ntoa_r(&Device[0].netmask, buf, sizeof(buf)));
 
-  if (GetDeviceInfo(Param.Device1, Device[1].hwaddr, &Device[1].addr, &Device[1].subnet, &Device[1].netmask) == -1)
+  if (GetDeviceInfo(Param.Device2, Device[1].hwaddr, &Device[1].addr, &Device[1].subnet, &Device[1].netmask) == -1)
   {
     DebugPrintf("GetDeviceInfo:error:%s\n", Param.Device2);
     return -1;
