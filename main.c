@@ -141,6 +141,7 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
   if (ntohs(eh->ether_type) == ETHERTYPE_ARP)
   {
     struct ether_arp  *arp;
+
     if (lest < sizeof(struct ether_arp))
     {
       DebugPrintf("[%d]:lest(%d) < sizeof(struct ether_arp)\n", deviceNo, lest);
@@ -162,116 +163,110 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
       DebugPrintf("[%d]recv: ARP REPLY:%dbytes\n", deviceNo, size);
       Ip2Mac(deviceNo, *(in_addr_t *)arp->arp_spa, arp->arp_sha);
     }
-    else if (ntohs(eh->ether_type) == ETHERTYPE_IP)
+  }
+  else if (ntohs(eh->ether_type) == ETHERTYPE_IP)
+  {
+    struct iphdr *iphdr;
+    u_char        option[1500];
+    int           optionLen;
+
+    if (lest < sizeof(struct iphdr))
     {
-      struct iphdr *iphdr;
-      u_char        option[1500];
-      int           optionLen;
+      DebugPrintf("[%d]:lest(%d) < sizeof(struct iphdr)\n", deviceNo, lest);
+      return -1;
+    }
 
-      if (lest < sizeof(struct iphdr))
+    iphdr = (struct iphdr *)ptr;
+    ptr  += sizeof(struct iphdr);
+    lest -= sizeof(struct iphdr);
+
+    optionLen = iphdr->ihl * 4 - sizeof(struct iphdr);
+    if (optionLen > 0)
+    {
+      if (optionLen >= 1500)
       {
-        DebugPrintf("[%d]:lest(%d) < sizeof(struct iphdr)\n", deviceNo, lest);
+        DebugPrintf("[%d]:IP optionLen(%d):too big\n", deviceNo, optionLen);
         return -1;
       }
 
-      iphdr = (struct iphdr *)ptr;
-      ptr  += sizeof(struct iphdr);
-      lest -= sizeof(struct iphdr);
+      memcpy(option, ptr, optionLen);
+      ptr  += optionLen;
+      lest -= optionLen;
+    }
 
-      optionLen = iphdr->ihl * 4 - sizeof(struct iphdr);
-      if (optionLen > 0)
+    if (checkIPchecksum(iphdr, option, optionLen) == 0)
+    {
+      DebugPrintf("[%d]:bad ip checksum\n", deviceNo);
+      fprintf(stderr, "IP checksum error\n");
+      return -1;
+    }
+
+    if (iphdr->ttl - 1 <= 0)
+    {
+      DebugPrintf("[%d]:iphdr->ttl <= 0 error\n", deviceNo);
+      SendIcmpTimeExceeded(deviceNo, eh, iphdr, data, size);
+      return -1;
+    }
+
+    tno = (!deviceNo);
+
+    if ( (iphdr->daddr & Device[tno].netmask.s_addr) == Device[tno].subet.s_addr )
+    {
+      IP2MAC *ip2mac;
+
+      DebugPrintf("[%d]:%s to TargetSegment\n", deviceNo, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
+
+      if (iphdr->daddr == Device[tno].addr.s_addr)
       {
-        if (optionLen >= 1500)
-        {
-          DebugPrintf("[%d]:IP optionLen(%d):too big\n", deviceNo, optionLen);
-          return -1;
-        }
-
-        memcpy(option, ptr, optionLen);
-        ptr  += optionLen;
-        lest -= optionLen;
+        DebugPrintf("[%d]:recv:myaddr\n", deviceNo);
+        return 1;
       }
 
-      if (checkIPchecksum(iphdr, option, optionLen) == 0)
+      ip2mac = Ip2Mac(tno, iphdr->daddr, NULL);
+      if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno != 0)
       {
-        DebugPrintf("[%d]:bad ip checksum\n", deviceNo);
-        fprintf(stderr, "IP checksum error\n");
+        DebugPrintf("[%d]:Ip2Mac:error or sending\n", deviceNo);
+        AppendSendData(ip2mac, 1, iphdr->daddr, data, size);
         return -1;
       }
-
-      if (iphdr->ttl - 1 <= 0)
-      {
-        DebugPrintf("[%d]:iphdr->ttl <= 0 error\n", deviceNo);
-        SendIcmpTimeExceeded(deviceNo, eh, iphdr, data, size);
-        return -1;
+      else {
+        memcpy(hwaddr, ip2mac->hwaddr, 6);
       }
+    }
+    else
+    {
+      IP2MAC *ip2mac;
 
-      tno = (!deviceNo);
+      DebugOut("[%d]:%s to NextRouter\n", deviceNo, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
 
-      if ( (iphdr->daddr & Device[tno].netmask.s_addr) == Device[tno].subet.s_addr )
+      ip2mac = Ip2Mac(tno, NextRouter.s_addr, NULL);
+
+      if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno !=0)
       {
-        IP2MAC *ip2mac;
-
-        DebugPrintf("[%d]:%s to TargetSegment\n", deviceNo, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
-
-        if (iphdr->daddr == Device[tno].addr.s_addr)
-        {
-          DebugPrintf("[%d]:recv:myaddr\n", deviceNo);
-          return 1;
-        }
-
-        ip2mac = Ip2Mac(tno, iphdr->daddr, NULL);
-        if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno != 0)
-        {
-          DebugPrintf("[%d]:Ip2Mac:error or sending\n", deviceNo);
-          AppendSendData(ip2mac, 1, iphdr->daddr, data, size);
-          return -1;
-        }
-        else {
-          memcpy(hwaddr, ip2mac->hwaddr, 6);
-        }
+        DebugPrintf("[%d]:Ip2Mac:error or sending\n", deviceNo);
+        AppendSendData(ip2mac, 1, NextRouter.s_addr, data, size);
+        return -1;
       }
       else
       {
-        IP2MAC *ip2mac;
-
-        DebugOut("[%d]:%s to NextRouter\n", deviceNo, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
-
-        ip2mac = Ip2Mac(tno, NextRouter.s_addr, NULL);
-
-        if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno !=0)
-        {
-          DebugPrintf("[%d]:Ip2Mac:error or sending\n", deviceNo);
-          AppendSendData(ip2mac, 1, NextRouter.s_addr, data, size);
-          return -1;
-        }
-        else
-        {
-          memcpy(hwaddr, ip2mac->hwaddr, 6);
-        }
+        memcpy(hwaddr, ip2mac->hwaddr, 6);
       }
-
-      memcpy(eh->ether_dhost, hwaddr, 6);
-      memcpy(eh->ether_shost, Device[tno].hwaddr, 6);
-
-      iphdr->ttl--;
-      iphdr->check = 0;
-      iphdr->check = chesksum2((u_char *)iphdr, sizeof(struct iphdr), option, optionLen);
-
-      write(Device[tno].sock, data, size);
     }
 
-    return 0;
+    memcpy(eh->ether_dhost, hwaddr, 6);
+    memcpy(eh->ether_shost, Device[tno].hwaddr, 6);
+
+    iphdr->ttl--;
+    iphdr->check = 0;
+    iphdr->check = chesksum2((u_char *)iphdr, sizeof(struct iphdr), option, optionLen);
+
+    write(Device[tno].sock, data, size);
   }
-
-
-  if (Param.DebugOut)
-    PrintEtherHeader(eh, stderr);
 
   return 0;
 }
 
-int Bridge(void)
+int Router(void)
 {
   struct pollfd targets[2];
   int           nready, i, size;
@@ -288,30 +283,26 @@ int Bridge(void)
     {
       case -1:
         if (errno != EINTR)
-          perror("poll");
+          DebugPerror("poll");
 
         break;
       case 0:
         break;
       default:
-        for (i = 1; i >= 0; --i)
+        for (i = 0; i < 2; ++i)
         {
           if( (targets[i].revents & (POLLIN | POLLERR)) == 0 )
-            break;
+            continue;
 
           if ( (size = read(Device[i].sock, buf, sizeof(buf))) <= 0 )
           {
-            perror("read");
-            break;
+            DebugPerror("read");
+            continue;
           }
-          else if ( AnalyzePacket(i, buf, size) == -1 )
-            break;
-          else if ( (size = write(Device[(!i)].sock, buf, size)) <= 0 )
-          {
-            perror("write");
-            break;
-          }
+
+          AnalyzePacket(i, buf, size);
         }
+        break;
     }
   }
 
@@ -350,46 +341,88 @@ int EnableIpForward()
   return 0;
 }
 
+void *BufThread(void *arg)
+{
+  BufferSend();
+
+  return NULL;
+}
+
 void EndSignal(int sig)
 {
   EndFlag = 1;
 }
 
+pthread_t BufTid;
+
 int main(int argc, char *argv[], char *envp[])
 {
-  if ( (Device[0].sock = InitRawSocket(Param.Device1, 1, 0)) == -1 )
+  char            buf[80];
+  pthread_attr_t  attr;
+  int             status;
+
+  inet_aton(Param.NextRouter, &NextRouter);
+  DebugPrintf("NextRouter=%s¥n", my_inet_ntoa_r(&NextRouter, buf, sizeof(buf)));
+
+  if (GetDeviceInfo(Param.Device1, Device[0].hwaddr, &Device[0].addr, &Device[0].subnet, &Device[0].netmask) == -1)
+  {
+    DebugPrintf("GetDeviceInfo:error:%s¥n", Param.Device1);
+    return -1;
+  }
+
+  if ( (Device[0].sock = InitRawSocket(Param.Device1, 0, 0)) == -1 )
   {
     DebugPrintf("InitRawSocket:error:%s\n", Param.Device1);
     return -1;
   }
 
   DebugPrintf("%s OK\n", Param.Device1);
+  DebugPrintf("addr=%s¥n", my_inet_ntoa_r(&Device[0].addr, buf, sizeof(buf)));
+  DebugPrintf("subnet=%s¥n", my_inet_ntoa_r(&Device[0].subnet, buf, sizeof(buf)));
+  DebugPrintf("netmask=%s¥n", my_inet_ntoa_r(&Device[0].netmask, buf, sizeof(buf)));
 
-  if ( (Device[1].sock = InitRawSocket(Param.Device2, 1, 0)) == -1 )
+  if (GetDeviceInfo(Param.Device1, Device[1].hwaddr, &Device[1].addr, &Device[1].subnet, &Device[1].netmask) == -1)
+  {
+    DebugPrintf("GetDeviceInfo:error:%s¥n", Param.Device2);
+    return -1;
+  }
+
+  if ( (Device[1].sock = InitRawSocket(Param.Device2, 0, 0)) == -1 )
   {
     DebugPrintf("InitRawSocket:error:%s\n", Param.Device2);
     return -1;
   }
 
   DebugPrintf("%s OK\n", Param.Device2);
+  DebugPrintf("addr=%s¥n", my_inet_ntoa_r(&Device[1].addr, buf, sizeof(buf)));
+  DebugPrintf("subnet=%s¥n", my_inet_ntoa_r(&Device[1].subnet, buf, sizeof(buf)));
+  DebugPrintf("netmask=%s¥n", my_inet_ntoa_r(&Device[1].netmask, buf, sizeof(buf)));
 
   DisableIpForward();
+
+  pthread_attr_init(&attr);
+
+  if ( (status == pthread_create(&BufTid, &attr, BufThread, NULL)) != 0 )
+  {
+    DebugPrintf("pthread_create:%s¥n", strerror(status));
+  }
 
   signal(SIGINT, EndSignal);
   signal(SIGTERM, EndSignal);
   signal(SIGQUIT, EndSignal);
+
   signal(SIGPIPE, SIG_IGN);
   signal(SIGTTIN, SIG_IGN);
   signal(SIGTTOU, SIG_IGN);
 
-  DebugPrintf("bridge start\n");
+  DebugPrintf("router start\n");
   Bridge();
-  DebugPrintf("bridge end\n");
+  DebugPrintf("router end\n");
+
+  pthread_join(BufTid, NULL);
 
   close(Device[0].sock);
   close(Device[1].sock);
   
-  EnableIpForward();
-
   return 0;
 }

@@ -1,7 +1,7 @@
-OBJS=bridge.o netutil.o analyze.o checksum.o print.o
+OBJS=main.o netutil.o ip2mac.o sendBuf.o
 SRCS=$(OBJS:%.o=%.c)
 CFLAGS=-g -Wall
-LDLIBS=
-TARGET=bridge
+LDLIBS=-lpthread
+TARGET=router
 $(TARGET):$(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET) $(OBJS) $(LDLIBS)
