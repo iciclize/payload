@@ -21,14 +21,10 @@ typedef struct {
   char *Device1;
   char *Device2;
   int   DebugOut;
-  char *nextRouter;
+  char *NextRouter;
 } PARAM;
 
-PARAM Param = { "eth0", "eth1", 0, "192.168.10.221" };
-
-typedef struct {
-  int sock;
-} DEVICE;
+PARAM Param = { "eth0", "eth1", 1, "192.168.10.221" };
 
 DEVICE          Device[2];
 struct in_addr  NextRouter;
@@ -75,7 +71,7 @@ int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *ip
   rih.tos      = 0;
   rih.tot_len  = htons(sizeof(struct icmp) + 64);
   rih.id       = 0;
-  rih.frag_off = 0
+  rih.frag_off = 0;
   rih.ttl      = 64;
   rih.protocol = IPPROTO_ICMP;
   rih.check    = 0;
@@ -98,7 +94,7 @@ int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *ip
   ptr += sizeof(struct ether_header);
   memcpy(ptr, &rih, sizeof(struct iphdr));
   ptr += sizeof(struct iphdr);
-  memcpt(ptr, &icmp, 8);
+  memcpy(ptr, &icmp, 8);
   ptr += 8;
   memcpy(ptr, ipptr, 64);
   ptr += 64;
@@ -210,7 +206,7 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
 
     tno = (!deviceNo);
 
-    if ( (iphdr->daddr & Device[tno].netmask.s_addr) == Device[tno].subet.s_addr )
+    if ( (iphdr->daddr & Device[tno].netmask.s_addr) == Device[tno].subnet.s_addr )
     {
       IP2MAC *ip2mac;
 
@@ -237,7 +233,7 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
     {
       IP2MAC *ip2mac;
 
-      DebugOut("[%d]:%s to NextRouter\n", deviceNo, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
+      DebugPrintf("[%d]:%s to NextRouter\n", deviceNo, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
 
       ip2mac = Ip2Mac(tno, NextRouter.s_addr, NULL);
 
@@ -258,7 +254,7 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
 
     iphdr->ttl--;
     iphdr->check = 0;
-    iphdr->check = chesksum2((u_char *)iphdr, sizeof(struct iphdr), option, optionLen);
+    iphdr->check = checksum2((u_char *)iphdr, sizeof(struct iphdr), option, optionLen);
 
     write(Device[tno].sock, data, size);
   }
@@ -362,11 +358,11 @@ int main(int argc, char *argv[], char *envp[])
   int             status;
 
   inet_aton(Param.NextRouter, &NextRouter);
-  DebugPrintf("NextRouter=%s¥n", my_inet_ntoa_r(&NextRouter, buf, sizeof(buf)));
+  DebugPrintf("NextRouter=%s\n", my_inet_ntoa_r(&NextRouter, buf, sizeof(buf)));
 
   if (GetDeviceInfo(Param.Device1, Device[0].hwaddr, &Device[0].addr, &Device[0].subnet, &Device[0].netmask) == -1)
   {
-    DebugPrintf("GetDeviceInfo:error:%s¥n", Param.Device1);
+    DebugPrintf("GetDeviceInfo:error:%s\n", Param.Device1);
     return -1;
   }
 
@@ -377,13 +373,13 @@ int main(int argc, char *argv[], char *envp[])
   }
 
   DebugPrintf("%s OK\n", Param.Device1);
-  DebugPrintf("addr=%s¥n", my_inet_ntoa_r(&Device[0].addr, buf, sizeof(buf)));
-  DebugPrintf("subnet=%s¥n", my_inet_ntoa_r(&Device[0].subnet, buf, sizeof(buf)));
-  DebugPrintf("netmask=%s¥n", my_inet_ntoa_r(&Device[0].netmask, buf, sizeof(buf)));
+  DebugPrintf("addr=%s\n", my_inet_ntoa_r(&Device[0].addr, buf, sizeof(buf)));
+  DebugPrintf("subnet=%s\n", my_inet_ntoa_r(&Device[0].subnet, buf, sizeof(buf)));
+  DebugPrintf("netmask=%s\n", my_inet_ntoa_r(&Device[0].netmask, buf, sizeof(buf)));
 
   if (GetDeviceInfo(Param.Device1, Device[1].hwaddr, &Device[1].addr, &Device[1].subnet, &Device[1].netmask) == -1)
   {
-    DebugPrintf("GetDeviceInfo:error:%s¥n", Param.Device2);
+    DebugPrintf("GetDeviceInfo:error:%s\n", Param.Device2);
     return -1;
   }
 
@@ -394,17 +390,17 @@ int main(int argc, char *argv[], char *envp[])
   }
 
   DebugPrintf("%s OK\n", Param.Device2);
-  DebugPrintf("addr=%s¥n", my_inet_ntoa_r(&Device[1].addr, buf, sizeof(buf)));
-  DebugPrintf("subnet=%s¥n", my_inet_ntoa_r(&Device[1].subnet, buf, sizeof(buf)));
-  DebugPrintf("netmask=%s¥n", my_inet_ntoa_r(&Device[1].netmask, buf, sizeof(buf)));
+  DebugPrintf("addr=%s\n", my_inet_ntoa_r(&Device[1].addr, buf, sizeof(buf)));
+  DebugPrintf("subnet=%s\n", my_inet_ntoa_r(&Device[1].subnet, buf, sizeof(buf)));
+  DebugPrintf("netmask=%s\n", my_inet_ntoa_r(&Device[1].netmask, buf, sizeof(buf)));
 
   DisableIpForward();
 
   pthread_attr_init(&attr);
 
-  if ( (status == pthread_create(&BufTid, &attr, BufThread, NULL)) != 0 )
+  if ( (status = pthread_create(&BufTid, &attr, BufThread, NULL)) != 0 )
   {
-    DebugPrintf("pthread_create:%s¥n", strerror(status));
+    DebugPrintf("pthread_create:%s\n", strerror(status));
   }
 
   signal(SIGINT, EndSignal);
@@ -416,7 +412,7 @@ int main(int argc, char *argv[], char *envp[])
   signal(SIGTTOU, SIG_IGN);
 
   DebugPrintf("router start\n");
-  Bridge();
+  Router();
   DebugPrintf("router end\n");
 
   pthread_join(BufTid, NULL);

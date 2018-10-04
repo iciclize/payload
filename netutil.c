@@ -104,7 +104,7 @@ int GetDeviceInfo(char *device, u_char hwaddr[6], struct in_addr *uaddr, struct 
   }
   else if (ifreq.ifr_addr.sa_family != PF_INET)
   {
-    DebugPrintf("%s not PF_INET¥n", device);
+    DebugPrintf("%s not PF_INET\n", device);
     close(sock);
     return -1;
   }
@@ -126,7 +126,7 @@ int GetDeviceInfo(char *device, u_char hwaddr[6], struct in_addr *uaddr, struct 
     *mask = addr.sin_addr;
   }
 
-  subnet->s_addr = ((u_addr->s_addr) & (mask->s_addr));
+  subnet->s_addr = ((uaddr->s_addr) & (mask->s_addr));
 
   close(sock);
 
@@ -347,7 +347,7 @@ int SendArpRequestB(int sock, in_addr_t target_ip, u_char target_mac[6], in_addr
     arp.arp.arp_spa[i] = lc.c[i];
   }
 
-  lc.c = target_ip;
+  lc.l = target_ip;
   for (i = 0; i < 4; i++)
   {
     arp.arp.arp_tpa[i] = lc.c[i];

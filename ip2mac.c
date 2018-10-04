@@ -54,7 +54,7 @@ IP2MAC *Ip2MacSearch(int deviceNo, in_addr_t addr, u_char *hwaddr)
       }
       continue;
     }
-    if (ip2mac->addr = addr)
+    if (ip2mac->addr == addr)
     {
       if (ip2mac->flag == FLAG_OK)
       {
@@ -62,13 +62,13 @@ IP2MAC *Ip2MacSearch(int deviceNo, in_addr_t addr, u_char *hwaddr)
       }
       if (hwaddr != NULL)
       {
-        memcpy(ip3mac->hwaddr, hwaddr, 6);
+        memcpy(ip2mac->hwaddr, hwaddr, 6);
         ip2mac->flag = FLAG_OK;
         if (ip2mac->sd.top != NULL)
         {
             AppendSendReqData(deviceNo, i);
         }
-        // DebugPrintf("Ip2Mac EXIST [%d] %s = %d¥n", deviceNo, in_addr_t2str(addr, buf, sizeof(buf)), i);
+        // DebugPrintf("Ip2Mac EXIST [%d] %s = %d\n", deviceNo, in_addr_t2str(addr, buf, sizeof(buf)), i);
         return ip2mac;
       }
       else
@@ -78,7 +78,7 @@ IP2MAC *Ip2MacSearch(int deviceNo, in_addr_t addr, u_char *hwaddr)
         {
           FreeSendData(ip2mac);
           ip2mac->flag = FLAG_FREE;
-          // DebugPrintf("Ip2Mac FREE [%d] %s = %d¥n", deviceNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), i);            
+          // DebugPrintf("Ip2Mac FREE [%d] %s = %d\n", deviceNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), i);            
           if (freeNo == -1)
           {
             freeNo = i;
@@ -86,7 +86,7 @@ IP2MAC *Ip2MacSearch(int deviceNo, in_addr_t addr, u_char *hwaddr)
         }
         else
         {
-          // DebugPrintf("Ip2Mac EXIST [%d] %s = %d¥n", deviceNo, in_addr_t2str(addr, buf, sizeof(buf)), i);
+          // DebugPrintf("Ip2Mac EXIST [%d] %s = %d\n", deviceNo, in_addr_t2str(addr, buf, sizeof(buf)), i);
           return ip2mac;
         }
       }
@@ -98,7 +98,7 @@ IP2MAC *Ip2MacSearch(int deviceNo, in_addr_t addr, u_char *hwaddr)
       {
         FreeSendData(ip2mac);
         ip2mac->flag = FLAG_FREE;
-        // DebugPrintf("Ip2Mac FREE [%d] %s = %d¥n", deviceNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), i);            
+        // DebugPrintf("Ip2Mac FREE [%d] %s = %d\n", deviceNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), i);            
         if (freeNo == -1)
         {
           freeNo = i;
@@ -148,7 +148,7 @@ IP2MAC *Ip2MacSearch(int deviceNo, in_addr_t addr, u_char *hwaddr)
   memset(&ip2mac->sd, 0, sizeof(SEND_DATA));
   pthread_mutex_init(&ip2mac->sd.mutex, NULL);
 
-  DebugPrintf("Ip2Mac ADD [%d] %s = %d¥n", deviceNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), no);
+  DebugPrintf("Ip2Mac ADD [%d] %s = %d\n", deviceNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), no);
 
   return ip2mac;
 }
@@ -163,13 +163,13 @@ IP2MAC *Ip2Mac(int deviceNo, in_addr_t addr, u_char *hwaddr)
 
   if (ip2mac->flag == FLAG_OK)
   {
-    DebugPrintf("Ip2Mac(%s):OK¥n", in_addr_t2str(addr, buf, sizeof(buf)));
+    DebugPrintf("Ip2Mac(%s):OK\n", in_addr_t2str(addr, buf, sizeof(buf)));
     return ip2mac;
   }
   else
   {
-    DebugPrintf("Ip2Mac(%s):NG¥n", in_addr_t2str(addr, buf, sizeof(buf)));
-    DebugPrintf("Ip2Mac(%s):Send Aep Request¥n", in_addr_t2str(addr, buf, sizeof(buf)));
+    DebugPrintf("Ip2Mac(%s):NG\n", in_addr_t2str(addr, buf, sizeof(buf)));
+    DebugPrintf("Ip2Mac(%s):Send Aep Request\n", in_addr_t2str(addr, buf, sizeof(buf)));
     SendArpRequestB(Device[deviceNo].sock, addr, bcast, Device[deviceNo].addr.s_addr, Device[deviceNo].hwaddr);
     return ip2mac;
   }
@@ -205,24 +205,24 @@ int BufferSendOne(int deviceNo, IP2MAC *ip2mac)
       ptr += optionLen;
     }
 
-    memcpy(eh.ehter_dhost, ip2mac->hwaddr, 6);
+    memcpy(eh.ether_dhost, ip2mac->hwaddr, 6);
     memcpy(data, &eh, sizeof(struct ether_header));
 
-    DebugPrintf("iphdr.ttl %d->%d¥n", iphdr.ttl, iphdr.ttl - 1);
-    tphdr.ttl --;
+    DebugPrintf("iphdr.ttl %d->%d\n", iphdr.ttl, iphdr.ttl - 1);
+    iphdr.ttl --;
 
     iphdr.check = 0;
-    iphdr.check = checksum((u_char *)&iphdr, sizeof(struct iphdr), option, optionLen);
+    iphdr.check = checksum2((u_char *)&iphdr, sizeof(struct iphdr), option, optionLen);
     memcpy(data + sizeof(struct ether_header), &iphdr, sizeof(struct iphdr));
 
-    DebugPrintf("write:BufferSendOne:[%d] %dbytes¥n", deviceNo, size);
+    DebugPrintf("write:BufferSendOne:[%d] %dbytes\n", deviceNo, size);
     write(Device[deviceNo].sock, data, size);
 
     /*
-    DebugPrintf("***********************************[%d]¥n", deviceNo);
+    DebugPrintf("***********************************[%d]\n", deviceNo);
     print_ether_header(&eh);
     print_ip(&ip);
-    DebugPrintf("***********************************[%d}¥n", deviceNo);
+    DebugPrintf("***********************************[%d}\n", deviceNo);
     */
   }
 
@@ -239,8 +239,8 @@ typedef struct _send_req_data_ {
 struct {
   SEND_REQ_DATA *top;
   SEND_REQ_DATA *bottom;
-  ptherad_mutex_t mutex;
-  ptherad_cond_t  cond;
+  pthread_mutex_t mutex;
+  pthread_cond_t  cond;
 } SendReq = { NULL, NULL, PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER };
 
 int AppendSendReqData(int deviceNo, int ip2macNo)
@@ -250,7 +250,7 @@ int AppendSendReqData(int deviceNo, int ip2macNo)
 
   if ( (status = pthread_mutex_lock(&SendReq.mutex)) != 0 )
   {
-    DebugPrintf("AppendSendReqData:pthread_mutex_lock:%s¥n", strerror(status));
+    DebugPrintf("AppendSendReqData:pthread_mutex_lock:%s\n", strerror(status));
     return -1;
   }
 
@@ -267,28 +267,32 @@ int AppendSendReqData(int deviceNo, int ip2macNo)
 
   if (d == NULL)
   {
-    d->next = d->before = NULL;
-    d->deviceNo = deviceNo;
-    d->ip2macNo = ip2macNo;
-
-    if (SendReq.bottom == NULL)
-    {
-      SendReq.top = SendReq.bottom = d;
-    }
-    else
-    {
-      SendReq.bottom->next = d;
-      d->before = SendReq.bottom;
-      SendReq.bottom = d;
-    }
-
-    pthread_cond_signal(&SendReq.cond);
+    DebugPrintf("AppendSendReqData:malloc");
     pthread_mutex_unlock(&SendReq.mutex);
-
-    DebugPrintf("AppendSendReqData:[%d] %d¥n", deviceNo, ip2macNo);
-
-    return 0;
+    return -1;
   }
+
+  d->next = d->before = NULL;
+  d->deviceNo = deviceNo;
+  d->ip2macNo = ip2macNo;
+
+  if (SendReq.bottom == NULL)
+  {
+    SendReq.top = SendReq.bottom = d;
+  }
+  else
+  {
+    SendReq.bottom->next = d;
+    d->before = SendReq.bottom;
+    SendReq.bottom = d;
+  }
+
+  pthread_cond_signal(&SendReq.cond);
+  pthread_mutex_unlock(&SendReq.mutex);
+
+  DebugPrintf("AppendSendReqData:[%d] %d\n", deviceNo, ip2macNo);
+
+  return 0;
 }
 
 int GetSendReqData(int *deviceNo, int *ip2macNo)
@@ -301,7 +305,7 @@ int GetSendReqData(int *deviceNo, int *ip2macNo)
 
   if ( (status = pthread_mutex_lock(&SendReq.mutex)) != 0 )
   {
-    DebugPrintf("pthread_mutex_lock:%s¥n", strerror(status));
+    DebugPrintf("pthread_mutex_lock:%s\n", strerror(status));
     return -1;
   }
 
@@ -321,7 +325,7 @@ int GetSendReqData(int *deviceNo, int *ip2macNo)
   *deviceNo = d->deviceNo;
   *ip2macNo = d->ip2macNo;
 
-  DebugPrintf("GetSendReqData:[%d] %d¥n", *deviceNo, *ip2macNo);
+  DebugPrintf("GetSendReqData:[%d] %d\n", *deviceNo, *ip2macNo);
 
   return 0;
 }
@@ -343,7 +347,7 @@ int BufferSend()
 
     if ( (status = pthread_cond_timedwait(&SendReq.cond, &SendReq.mutex, &timeout)) != 0 )
     {
-      DebugPrintf("pthread_cond_timedwait:%s¥n", strerror(status));
+      DebugPrintf("pthread_cond_timedwait:%s\n", strerror(status));
     }
     pthread_mutex_unlock(&SendReq.mutex);
 
@@ -356,7 +360,7 @@ int BufferSend()
     }
   }
 
-  DebugPrintf("BufferSend:end¥n");
+  DebugPrintf("BufferSend:end\n");
 
   return 0;
 }

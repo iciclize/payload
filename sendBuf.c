@@ -27,7 +27,7 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
 
     if (sd->inBucketSize > MAX_BUCKET_SIZE)
     {
-        DebugPrintf("AppendSendData:Bucket overflow¥n");
+        DebugPrintf("AppendSendData:Bucket overflow\n");
         return -1;
     }
 
@@ -46,14 +46,14 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
         return -1;
     }
 
-    d->next = d->before; = NULL;
+    d->next = d->before = NULL;
     d->t = time(NULL);
     d->size = size;
     memcpy(d->data, data, size);
 
     if ( (status = pthread_mutex_lock(&sd->mutex)) != 0 )
     {
-        DebugPrintf("AppendSendData:pthread_mutex_lock:%s¥n", strerror(status));
+        DebugPrintf("AppendSendData:pthread_mutex_lock:%s\n", strerror(status));
         free(d);
         return -1;
     }
@@ -72,7 +72,7 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
     sd->inBucketSize += size;
     pthread_mutex_unlock(&sd->mutex);
 
-    DebugPrintf("AppendSendData:[%d] %s %dbytes(Total=%lu:%lubytes)¥n",
+    DebugPrintf("AppendSendData:[%d] %s %dbytes(Total=%lu:%lubytes)\n",
         deviceNo,
         in_addr_t2str(addr, buf, sizeof(buf)),
         size,
@@ -96,7 +96,7 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
 
     if ( (status = pthread_mutex_lock(&sd->mutex)) != 0 )
     {
-        DebugPrintf("pthread_mutex_lock:%s¥n", strerror(status));
+        DebugPrintf("pthread_mutex_lock:%s\n", strerror(status));
         return -1;
     }
 
@@ -108,7 +108,7 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
     }
     else
     {
-        sd->top->before == NULL;
+        sd->top->before = NULL;
     }
 
     sd->dno--;
@@ -121,7 +121,7 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
 
     free(d);
 
-    DebugPrintf("GetSendData:[%d] %s %dbytes¥n", ip2mac->deviceNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), *size);
+    DebugPrintf("GetSendData:[%d] %s %dbytes\n", ip2mac->deviceNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), *size);
 
     return 0;
  }
@@ -140,13 +140,13 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
 
      if ( (status = pthread_mutex_lock(&sd->mutex)) != 0 )
      {
-         DebugPrintf("pthread_mutex_lock:%s¥n", strerror(status));
+         DebugPrintf("pthread_mutex_lock:%s\n", strerror(status));
          return -1;
      }
 
      for (ptr = sd->top; ptr != NULL; ptr = ptr->next)
      {
-         DebugPrintf("FreeSendData:%s %lu¥n", in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), sd->inBucketSize);
+         DebugPrintf("FreeSendData:%s %lu\n", in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), sd->inBucketSize);
          free(ptr->data);
      }
 
@@ -154,7 +154,7 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
 
      pthread_mutex_unlock(&sd->mutex);
 
-     DebugPrintf("FreeSendData:[%d]¥n", ip2mac->deviceNo);
+     DebugPrintf("FreeSendData:[%d]\n", ip2mac->deviceNo);
 
      return 0;
  }
