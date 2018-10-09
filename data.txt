@@ -1,0 +1,37 @@
+ether_header-------------------------------------------------
+ether_dhost=00:a0:de:80:24:62
+ether_shost=00:90:cc:e7:c7:3f
+ether_type=800(IP)
+ip-------------------------------------------
+version=4, ihl=5, tos=0, tot_len=347, id=27325, frag_off=2, 0, ttl=128, protocol=6(TCP), check=f15d
+saddr=192.168.10.45 >>>>>> daddr=210.143.147.137
+tcp--------------------------
+source=52242, dest=80
+seq=1366873082
+ack_seq=915996506
+doff=5, urg=0, ack=1, psh=1, rst=0, syn=0, fin=0, th_win=259
+th_sum=22176, th_urp=0
+
+=============== TCP ===============
+47 45 54 20 2f 73 75 63 63 65 73 73 2e 74 78 74 20 48 54 54 50 2f 31 2e 31 0d 0a 48 6f 73 74 3a 20 64 65 74 65 63 74 70 6f 72 74 61 6c 2e 66 69 72 65 66 6f 78 2e 63 6f 6d 0d 0a 55 73 65 72 2d 41 67 65 6e 74 3a 20 4d 6f 7a 69 6c 6c 61 2f 35 2e 30 20 28 57 69 6e 64 6f 77 73 20 4e 54 20 31 30 2e 30 3b 20 57 69 6e 36 34 3b 20 78 36 34 3b 20 72 76 3a 36 32 2e 30 29 20 47 65 63 6b 6f 2f 32 30 31 30 30 31 30 31 20 46 69 72 65 66 6f 78 2f 36 32 2e 30 0d 0a 41 63 63 65 70 74 3a 20 2a 2f 2a 0d 0a 41 63 63 65 70 74 2d 4c 61 6e 67 75 61 67 65 3a 20 6a 61 2c 65 6e 2d 55 53 3b 71 3d 30 2e 37 2c 65 6e 3b 71 3d 30 2e 33 0d 0a 41 63 63 65 70 74 2d 45 6e 63 6f 64 69 6e 67 3a 20 67 7a 69 70 2c 20 64 65 66 6c 61 74 65 0d 0a 43 61 63 68 65 2d 43 6f 6e 74 72 6f 6c 3a 20 6e 6f 2d 63 61 63 68 65 0d 0a 50 72 61 67 6d 61 3a 20 6e 6f 2d 63 61 63 68 65 0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e 3a 20 6b 65 65 70 2d 61 6c 
+- - - - - - - - - - - - - - -
+GET /success.txt HTTP/1.1
+Host: detectportal.firefox.com
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:62.0) Gecko/20100101 Firefox/62.0
+Accept: */*
+Accept-Language: ja,en-US;q=0.7,en;q=0.3
+Accept-Encoding: gzip, deflate
+Cache-Control: no-cache
+Pragma: no-cache
+Connection: keep-al
+=============== TCP ===============
+cc 12 00 50 51 78 d3 fa 36 98 ff 5a 50 18 01 03 56 a0 00 00 47 45 54 20 2f 73 75 63 63 65 73 73 2e 74 78 74 20 48 54 54 50 2f 31 2e 31 0d 0a 48 6f 73 74 3a 20 64 65 74 65 63 74 70 6f 72 74 61 6c 2e 66 69 72 65 66 6f 78 2e 63 6f 6d 0d 0a 55 73 65 72 2d 41 67 65 6e 74 3a 20 4d 6f 7a 69 6c 6c 61 2f 35 2e 30 20 28 57 69 6e 64 6f 77 73 20 4e 54 20 31 30 2e 30 3b 20 57 69 6e 36 34 3b 20 78 36 34 3b 20 72 76 3a 36 32 2e 30 29 20 47 65 63 6b 6f 2f 32 30 31 30 30 31 30 31 20 46 69 72 65 66 6f 78 2f 36 32 2e 30 0d 0a 41 63 63 65 70 74 3a 20 2a 2f 2a 0d 0a 41 63 63 65 70 74 2d 4c 61 6e 67 75 61 67 65 3a 20 6a 61 2c 65 6e 2d 55 53 3b 71 3d 30 2e 37 2c 65 6e 3b 71 3d 30 2e 33 0d 0a 41 63 63 65 70 74 2d 45 6e 63 6f 64 69 6e 67 3a 20 67 7a 69 70 2c 20 64 65 66 6c 61 74 65 0d 0a 43 61 63 68 65 2d 43 6f 6e 74 72 6f 6c 3a 20 6e 6f 2d 63 61 63 68 65 0d 0a 50 72 61 67 6d 61 3a 20 6e 6f 2d 63 61 63 68 65 0d 
+- - - - - - - - - - - - - - -
+???PQx??6??ZP???V???GET /success.txt HTTP/1.1
+Host: detectportal.firefox.com
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:62.0) Gecko/20100101 Firefox/62.0
+Accept: */*
+Accept-Language: ja,en-US;q=0.7,en;q=0.3
+Accept-Encoding: gzip, deflate
+Cache-Control: no-cache
+Pragma: no-cache[1][170 Bytes]
