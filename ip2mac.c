@@ -163,7 +163,7 @@ IP2MAC *Ip2Mac(int deviceNo, in_addr_t addr, u_char *hwaddr)
 
   if (ip2mac->flag == FLAG_OK)
   {
-    DebugPrintf("Ip2Mac(%s):OK\n", in_addr_t2str(addr, buf, sizeof(buf)));
+    // DebugPrintf("Ip2Mac(%s):OK\n", in_addr_t2str(addr, buf, sizeof(buf)));
     return ip2mac;
   }
   else
@@ -218,12 +218,14 @@ int BufferSendOne(int deviceNo, IP2MAC *ip2mac)
     DebugPrintf("write:BufferSendOne:[%d] %dbytes\n", deviceNo, size);
     write(Device[deviceNo].sock, data, size);
 
-    /*
+    /* */
     DebugPrintf("***********************************[%d]\n", deviceNo);
-    print_ether_header(&eh);
-    print_ip(&ip);
+    // print_ether_header(&eh);
+    // print_ip(&ip);
+    PrintEtherHeader(&eh, stdout);
+    PrintIpHeader(&iphdr, "", 0, stdout);
     DebugPrintf("***********************************[%d}\n", deviceNo);
-    */
+    /* */
   }
 
   return 0;
@@ -347,7 +349,7 @@ int BufferSend()
 
     if ( (status = pthread_cond_timedwait(&SendReq.cond, &SendReq.mutex, &timeout)) != 0 )
     {
-      DebugPrintf("pthread_cond_timedwait:%s\n", strerror(status));
+      // DebugPrintf("pthread_cond_timedwait:%s\n", strerror(status));
     }
     pthread_mutex_unlock(&SendReq.mutex);
 

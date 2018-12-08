@@ -24,7 +24,7 @@ typedef struct {
   char *NextRouter;
 } PARAM;
 
-PARAM Param = { "eth0", "eth1", 1, "192.168.10.221" };
+PARAM Param = { "eth0", "eth1", 1, "10.0.0.1" };
 
 DEVICE          Device[2];
 struct in_addr  NextRouter;
@@ -366,7 +366,7 @@ int main(int argc, char *argv[], char *envp[])
     return -1;
   }
 
-  if ( (Device[0].sock = InitRawSocket(Param.Device1, 0, 0)) == -1 )
+  if ( (Device[0].sock = InitRawSocket(Param.Device1, 1, 0)) == -1 )
   {
     DebugPrintf("InitRawSocket:error:%s\n", Param.Device1);
     return -1;
@@ -383,7 +383,7 @@ int main(int argc, char *argv[], char *envp[])
     return -1;
   }
 
-  if ( (Device[1].sock = InitRawSocket(Param.Device2, 0, 0)) == -1 )
+  if ( (Device[1].sock = InitRawSocket(Param.Device2, 1, 0)) == -1 )
   {
     DebugPrintf("InitRawSocket:error:%s\n", Param.Device2);
     return -1;
