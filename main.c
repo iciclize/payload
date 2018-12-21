@@ -30,6 +30,10 @@ DEVICE          Device[2];
 struct in_addr  NextRouter;
 int             EndFlag = 0;
 
+/*
+ * DebugPrintf
+ * 表示非表示を制御可能なデバッグ用のprintfらしい
+ */
 int DebugPrintf(char *fmt, ...)
 {
   if (Param.DebugOut)
@@ -44,6 +48,9 @@ int DebugPrintf(char *fmt, ...)
   return 0;
 }
 
+/* DebugPerror
+ * 表示非表示を制御可能なデバッグ用のperrorらしい
+ */
 int DebugPerror(char *msg)
 {
   if (Param.DebugOut)
@@ -52,6 +59,17 @@ int DebugPerror(char *msg)
   return 0;
 }
 
+/*
+ * SendIcmpTimeExceeded
+ *
+ * TTL0につきパケットを破棄したという通知を送り返す
+ *
+ * int deviceNo            インターフェースに対応する構造体の配列のインデックス.
+ * struct ether_header *eh IPパケットの送り主から送られてきたパケットを含んでいたEthernetフレームのヘッダ.
+ * struct iphdr *iphdr     IPパケットの送り主から送られてきたパケットのIPヘッダ.
+ * u_char *data            IPパケットの送り主から送られてきたパケットのペイロード.
+ * int size                IPパケットの送り主から送られてきたパケットのペイロード長だと思う. 使われてなくて草.
+ */
 int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *iphdr, u_char *data, int size)
 {
   struct ether_header reh;
@@ -106,6 +124,15 @@ int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *ip
   return 0;
 }
 
+/*
+ * AnalyzePacket
+ *
+ * Ethernetフレームを見て中身をARP, IPか判定して転送までやってしまう巨大関数. 参考書は雰囲気だけ説明できればOKというつもりなのでしょう.
+ *
+ * int deviceNo インターフェースを紐付けた構造体の配列インデックス
+ * u_char *data Ethernetフレーム
+ * int     size Ethernetフレーム長
+ */
 int AnalyzePacket(int deviceNo, u_char *data, int size)
 {
   u_char *ptr;
@@ -118,6 +145,7 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
   ptr = data;
   lest = size;
 
+  /* フレーム長がヘッダーの長さ14Bytesより小さいのはおかしい */
   if (lest < sizeof(struct ether_header))
   {
     DebugPrintf("[%d]:lest(%d) < sizeof(struct ether_header)\n", deviceNo, lest);
@@ -125,9 +153,10 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
   }
 
   eh = (struct ether_header *)ptr;
-  ptr += sizeof(struct ether_header);
-  lest -= sizeof(struct ether_header);
+  ptr += sizeof(struct ether_header);  /* ポインタをEthernetのペイロードの先頭に持っていく */
+  lest -= sizeof(struct ether_header); /* フレームのケツまでのサイズを計算 */
 
+  /* フレームの宛先が自分ではなかったら無視する */
   if (memcmp(&eh->ether_dhost, Device[deviceNo].hwaddr, 6) != 0)
   {
     DebugPrintf("[%d]:dhost not match %s\n", deviceNo, my_ether_ntoa_r((u_char *)&eh->ether_dhost, buf, sizeof(buf)));
@@ -136,6 +165,7 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
 
   if (ntohs(eh->ether_type) == ETHERTYPE_ARP)
   {
+    /* フレームの中身がARPパケットだったとき */
     struct ether_arp  *arp;
 
     if (lest < sizeof(struct ether_arp))
@@ -145,11 +175,12 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
     }
 
     arp  = (struct ether_arp *)ptr;
-    ptr  += sizeof(struct ether_arp);
-    lest -= sizeof(struct ether_arp);
+    ptr  += sizeof(struct ether_arp); /* ポインタをARPヘッダの分だけ進める. ARPにはボディがなく空っぽになるので得に意味はなさそう. */
+    lest -= sizeof(struct ether_arp); /* 残りフレームサイズはたぶん0になるよね */
 
     if (arp->arp_op == htons(ARPOP_REQUEST))
     {
+      /* ARP要求が聞こえたので送り主のプロトコルアドレス(IPアドレス)とハードウェアアドレス(MACアドレス)を覚えとこ */
       DebugPrintf("[%d]recv:ARP REQUEST:%dbytes\n", deviceNo, size);
       Ip2Mac(deviceNo, *(in_addr_t *)arp->arp_spa, arp->arp_sha);
     }
@@ -162,10 +193,12 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
   }
   else if (ntohs(eh->ether_type) == ETHERTYPE_IP)
   {
+    /* フレームの中身がIPパケットだったとき */
     struct iphdr *iphdr;
     u_char        option[1500];
     int           optionLen;
 
+    /* IPヘッダは20Bytesはあるのに残りのフレームサイズがそれより小さいのはおかしいという話 */
     if (lest < sizeof(struct iphdr))
     {
       DebugPrintf("[%d]:lest(%d) < sizeof(struct iphdr)\n", deviceNo, lest);
@@ -173,10 +206,10 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
     }
 
     iphdr = (struct iphdr *)ptr;
-    ptr  += sizeof(struct iphdr);
-    lest -= sizeof(struct iphdr);
+    ptr  += sizeof(struct iphdr); /* ポインタはIPペイロードもしくはIPヘッダのオプション部分に進む */
+    lest -= sizeof(struct iphdr); /* フレーム残りサイズ */
 
-    optionLen = iphdr->ihl * 4 - sizeof(struct iphdr);
+    optionLen = iphdr->ihl * 4 - sizeof(struct iphdr); /* IPヘッダのオプション部分のサイズ. ヘッダ長の値から20Bytes引いているんですね */
     if (optionLen > 0)
     {
       if (optionLen >= 1500)
@@ -190,6 +223,7 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
       lest -= optionLen;
     }
 
+    /* IPチェックサムを検証して壊れたパケットを弾く */
     if (checkIPchecksum(iphdr, option, optionLen) == 0)
     {
       DebugPrintf("[%d]:bad ip checksum\n", deviceNo);
@@ -262,6 +296,11 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
   return 0;
 }
 
+/*
+ * Router
+ *
+ * ルーター(直球). パケット待ちビジーループ.
+ */
 int Router(void)
 {
   struct pollfd targets[2];
