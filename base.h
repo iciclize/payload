@@ -1,3 +1,6 @@
+#ifndef BASE_H
+#define BASE_H
+
 typedef struct {
   int             sock;
   u_char          hwaddr[6];
@@ -33,3 +36,26 @@ typedef struct {
   SEND_DATA     sd;
 } IP2MAC;
 
+
+/*
+ *  Routing table
+ */
+
+#define ROUTING_TABLE_MAX_ROWS 24
+
+/* Record */
+typedef struct routing_table_record {
+  struct in_addr dest     /* Destination */
+                 netmask, /* Netmask */
+                 gateway, /* Gateway */
+                 subnet;  /* Destination & Netmask */
+  int            sock;    /* Interface */
+} routing_table_record;
+
+
+/* Routing table */
+typedef struct routing_table {
+  struct routing_table_record *records[ROUTING_TABLE_MAX_ROWS];
+} routing_table;
+
+#endif /* BASE_H */
