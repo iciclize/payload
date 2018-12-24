@@ -241,8 +241,10 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
       return -1;
     }
 
+    PrintIpHeader(iphdr, option, optionLen, stdout);
+
     struct in_addr nexthop;
-   /* ネクストホップ探し、バイトオーダーをビッグエンディアンに */
+    /* ネクストホップ探し、バイトオーダーをビッグエンディアンに */
     nexthop.s_addr = (in_addr_t) htonl( (uint64_t)radix_tree_lookup(rt, (uint8_t *)&iphdr->daddr) );
 
     tno = getIfIndexByAddress(nexthop);
@@ -251,45 +253,18 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
       return -1;
     }
 
-    DebugPrintf("===== Nexthop: %s (if: %s)\n", in_addr_t2str(nexthop.s_addr, buf, sizeof(buf)), ifs[tno].name);
+    DebugPrintf("Nexthop: %s (if: %s)\n", in_addr_t2str(nexthop.s_addr, buf, sizeof(buf)), ifs[tno].name);
 
-    if ( (iphdr->daddr & ifs[tno].netmask.s_addr) == ifs[tno].subnet.s_addr ) {
-      IP2MAC *ip2mac;
+    IP2MAC *ip2mac;
+    ip2mac = Ip2Mac(tno, nexthop.s_addr, NULL);
 
-      DebugPrintf("[%s]:%s to TargetSegment\n", ifs[ifNo].name, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
-
-      if (iphdr->daddr == ifs[tno].addr.s_addr) {
-        DebugPrintf("[%s]:recv:myaddr\n", ifs[ifNo].name);
-        return 1;
-      }
-
-      ip2mac = Ip2Mac(tno, iphdr->daddr, NULL);
-      if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno != 0) {
-        DebugPrintf("[%s]:Ip2Mac:error or sending\n", ifs[ifNo].name);
-        AppendSendData(ip2mac, 1, iphdr->daddr, data, size);
-        return -1;
-      }
-      else {
-        memcpy(hwaddr, ip2mac->hwaddr, 6);
-      }
+    if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno !=0) {
+      DebugPrintf("[%s]:Ip2Mac:error or sending\n", ifs[ifNo].name);
+      AppendSendData(ip2mac, 1, nexthop.s_addr, data, size);
+      return -1;
     }
-    else
-    {
-      IP2MAC *ip2mac;
-
-      DebugPrintf("[%s]:%s to Nexthop(%s/%s)\n", ifs[ifNo].name, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)), in_addr_t2str(nexthop.s_addr, buf, sizeof(buf)), ifs[tno].name);
-
-      ip2mac = Ip2Mac(tno, nexthop.s_addr, NULL);
-
-      if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno !=0) {
-        DebugPrintf("[%s]:Ip2Mac:error or sending\n", ifs[ifNo].name);
-        AppendSendData(ip2mac, 1, nexthop.s_addr, data, size);
-        return -1;
-      }
-      else
-      {
-        memcpy(hwaddr, ip2mac->hwaddr, 6);
-      }
+    else {
+      memcpy(hwaddr, ip2mac->hwaddr, 6);
     }
 
     memcpy(eh->ether_dhost, hwaddr, 6);
