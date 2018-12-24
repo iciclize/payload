@@ -11,6 +11,9 @@
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
 #include <pthread.h>
+#include <inttypes.h>
+
+#include "radix.h"
 
 #include "netutil.h"
 #include "base.h"
@@ -18,17 +21,29 @@
 #include "sendBuf.h"
 
 typedef struct {
-  char *Device1;
-  char *Device2;
   int   DebugOut;
-  char *NextRouter;
 } PARAM;
 
-PARAM Param = { "eth0", "eth1", 1, "10.0.0.1" };
+PARAM Param = { 1 };
 
-DEVICE          Device[2];
-struct in_addr  NextRouter;
 int             EndFlag = 0;
+
+struct radix_tree *rt; /* Routing table */
+DEVICE *ifs;           /* Interfaces */
+int ifnum;             /* The number of interfaces */
+
+int getIfIndexByAddress(struct in_addr nexthop)
+{
+  int i;
+
+  for (i = 0; i < ifnum; i++) {
+    if ( (nexthop.s_addr & ifs[i].netmask.s_addr) == ifs[i].subnet.s_addr ) {
+      return i;
+    }
+  }
+
+  return -1;
+}
 
 /*
  * DebugPrintf
@@ -36,8 +51,7 @@ int             EndFlag = 0;
  */
 int DebugPrintf(char *fmt, ...)
 {
-  if (Param.DebugOut)
-  {
+  if (Param.DebugOut) {
     va_list args;
 
     va_start(args, fmt);
@@ -64,13 +78,13 @@ int DebugPerror(char *msg)
  *
  * TTL0につきパケットを破棄したという通知を送り返す
  *
- * int deviceNo            インターフェースに対応する構造体の配列のインデックス.
+ * int ifNo            インターフェースに対応する構造体の配列のインデックス.
  * struct ether_header *eh IPパケットの送り主から送られてきたパケットを含んでいたEthernetフレームのヘッダ.
  * struct iphdr *iphdr     IPパケットの送り主から送られてきたパケットのIPヘッダ.
  * u_char *data            IPパケットの送り主から送られてきたパケットのペイロード.
  * int size                IPパケットの送り主から送られてきたパケットのペイロード長だと思う. 使われてなくて草.
  */
-int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *iphdr, u_char *data, int size)
+int SendIcmpTimeExceeded(int ifNo, struct ether_header *eh, struct iphdr *iphdr, u_char *data, int size)
 {
   struct ether_header reh;
   struct iphdr        rih;
@@ -81,7 +95,7 @@ int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *ip
   int                 len;
 
   memcpy(reh.ether_dhost, eh->ether_shost, 6);
-  memcpy(reh.ether_shost, Device[deviceNo].hwaddr, 6);
+  memcpy(reh.ether_shost, ifs[ifNo].hwaddr, 6);
   reh.ether_type = htons(ETHERTYPE_IP);
 
   rih.version  = 4;
@@ -93,7 +107,7 @@ int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *ip
   rih.ttl      = 64;
   rih.protocol = IPPROTO_ICMP;
   rih.check    = 0;
-  rih.saddr    = Device[deviceNo].addr.s_addr;
+  rih.saddr    = ifs[ifNo].addr.s_addr;
   rih.daddr    = iphdr->saddr;
 
   rih.check = checksum((u_char *) &rih, sizeof(struct iphdr));
@@ -118,8 +132,8 @@ int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *ip
   ptr += 64;
   len = ptr - buf;
 
-  DebugPrintf("write:SendIcmpTimeExceeded:[%d] %dbytes\n", deviceNo, len);
-  write(Device[deviceNo].sock, buf, len);
+  DebugPrintf("write:SendIcmpTimeExceeded:[%d] %dbytes\n", ifNo, len);
+  write(ifs[ifNo].sock, buf, len);
 
   return 0;
 }
@@ -129,11 +143,11 @@ int SendIcmpTimeExceeded(int deviceNo, struct ether_header *eh, struct iphdr *ip
  *
  * Ethernetフレームを見て中身をARP, IPか判定して転送までやってしまう巨大関数. 参考書は雰囲気だけ説明できればOKというつもりなのでしょう.
  *
- * int deviceNo インターフェースを紐付けた構造体の配列インデックス
+ * int ifNo インターフェースを紐付けた構造体の配列インデックス
  * u_char *data Ethernetフレーム
  * int     size Ethernetフレーム長
  */
-int AnalyzePacket(int deviceNo, u_char *data, int size)
+int AnalyzePacket(int ifNo, u_char *data, int size)
 {
   u_char *ptr;
   int     lest;
@@ -146,9 +160,8 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
   lest = size;
 
   /* フレーム長がヘッダーの長さ14Bytesより小さいのはおかしい */
-  if (lest < sizeof(struct ether_header))
-  {
-    DebugPrintf("[%d]:lest(%d) < sizeof(struct ether_header)\n", deviceNo, lest);
+  if (lest < sizeof(struct ether_header)) {
+    DebugPrintf("[%d]:lest(%d) < sizeof(struct ether_header)\n", ifNo, lest);
     return -1;
   }
 
@@ -157,20 +170,17 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
   lest -= sizeof(struct ether_header); /* フレームのケツまでのサイズを計算 */
 
   /* フレームの宛先が自分ではなかったら無視する */
-  if (memcmp(&eh->ether_dhost, Device[deviceNo].hwaddr, 6) != 0)
-  {
-    DebugPrintf("[%d]:dhost not match %s\n", deviceNo, my_ether_ntoa_r((u_char *)&eh->ether_dhost, buf, sizeof(buf)));
+  if (memcmp(&eh->ether_dhost, ifs[ifNo].hwaddr, 6) != 0) {
+    DebugPrintf("[%d]:dhost not match %s\n", ifNo, my_ether_ntoa_r((u_char *)&eh->ether_dhost, buf, sizeof(buf)));
     return -1;
   }
 
-  if (ntohs(eh->ether_type) == ETHERTYPE_ARP)
-  {
+  if (ntohs(eh->ether_type) == ETHERTYPE_ARP) {
     /* フレームの中身がARPパケットだったとき */
     struct ether_arp  *arp;
 
-    if (lest < sizeof(struct ether_arp))
-    {
-      DebugPrintf("[%d]:lest(%d) < sizeof(struct ether_arp)\n", deviceNo, lest);
+    if (lest < sizeof(struct ether_arp)) {
+      DebugPrintf("[%d]:lest(%d) < sizeof(struct ether_arp)\n", ifNo, lest);
       return -1;
     }
 
@@ -178,30 +188,27 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
     ptr  += sizeof(struct ether_arp); /* ポインタをARPヘッダの分だけ進める. ARPにはボディがなく空っぽになるので得に意味はなさそう. */
     lest -= sizeof(struct ether_arp); /* 残りフレームサイズはたぶん0になるよね */
 
-    if (arp->arp_op == htons(ARPOP_REQUEST))
-    {
+    if (arp->arp_op == htons(ARPOP_REQUEST)) {
       /* ARP要求が聞こえたので送り主のプロトコルアドレス(IPアドレス)とハードウェアアドレス(MACアドレス)を覚えとこ */
-      DebugPrintf("[%d]recv:ARP REQUEST:%dbytes\n", deviceNo, size);
-      Ip2Mac(deviceNo, *(in_addr_t *)arp->arp_spa, arp->arp_sha);
+      DebugPrintf("[%s]recv:ARP REQUEST:%dbytes\n", ifs[ifNo].name, size);
+      Ip2Mac(ifNo, *(in_addr_t *)arp->arp_spa, arp->arp_sha);
     }
 
-    if (arp->arp_op == htons(ARPOP_REPLY))
-    {
-      DebugPrintf("[%d]recv: ARP REPLY:%dbytes\n", deviceNo, size);
-      Ip2Mac(deviceNo, *(in_addr_t *)arp->arp_spa, arp->arp_sha);
+    if (arp->arp_op == htons(ARPOP_REPLY)) {
+      /* ARPリプライが聞こえたので送り主のプロトコルアドレス(IPアドレス)とハードウェアアドレス(MACアドレス)を覚えとこ */
+      DebugPrintf("[%s]recv: ARP REPLY:%dbytes\n", ifs[ifNo].name, size);
+      Ip2Mac(ifNo, *(in_addr_t *)arp->arp_spa, arp->arp_sha);
     }
   }
-  else if (ntohs(eh->ether_type) == ETHERTYPE_IP)
-  {
+  else if (ntohs(eh->ether_type) == ETHERTYPE_IP) {
     /* フレームの中身がIPパケットだったとき */
     struct iphdr *iphdr;
     u_char        option[1500];
     int           optionLen;
 
     /* IPヘッダは20Bytesはあるのに残りのフレームサイズがそれより小さいのはおかしいという話 */
-    if (lest < sizeof(struct iphdr))
-    {
-      DebugPrintf("[%d]:lest(%d) < sizeof(struct iphdr)\n", deviceNo, lest);
+    if (lest < sizeof(struct iphdr)) {
+      DebugPrintf("[%d]:lest(%d) < sizeof(struct iphdr)\n", ifNo, lest);
       return -1;
     }
 
@@ -210,11 +217,9 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
     lest -= sizeof(struct iphdr); /* フレーム残りサイズ */
 
     optionLen = iphdr->ihl * 4 - sizeof(struct iphdr); /* IPヘッダのオプション部分のサイズ. ヘッダ長の値から20Bytes引いているんですね */
-    if (optionLen > 0)
-    {
-      if (optionLen >= 1500)
-      {
-        DebugPrintf("[%d]:IP optionLen(%d):too big\n", deviceNo, optionLen);
+    if (optionLen > 0) {
+      if (optionLen >= 1500) {
+        DebugPrintf("[%d]:IP optionLen(%d):too big\n", ifNo, optionLen);
         return -1;
       }
 
@@ -224,38 +229,43 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
     }
 
     /* IPチェックサムを検証して壊れたパケットを弾く */
-    if (checkIPchecksum(iphdr, option, optionLen) == 0)
-    {
-      DebugPrintf("[%d]:bad ip checksum\n", deviceNo);
+    if (checkIPchecksum(iphdr, option, optionLen) == 0) {
+      DebugPrintf("[%d]:bad ip checksum\n", ifNo);
       fprintf(stderr, "IP checksum error\n");
       return -1;
     }
 
-    if (iphdr->ttl - 1 <= 0)
-    {
-      DebugPrintf("[%d]:iphdr->ttl <= 0 error\n", deviceNo);
-      SendIcmpTimeExceeded(deviceNo, eh, iphdr, data, size);
+    if (iphdr->ttl - 1 <= 0) {
+      DebugPrintf("[%d]:iphdr->ttl <= 0 error\n", ifNo);
+      SendIcmpTimeExceeded(ifNo, eh, iphdr, data, size);
       return -1;
     }
 
-    tno = (!deviceNo);
+    struct in_addr nexthop;
+   /* ネクストホップ探し、バイトオーダーをビッグエンディアンに */
+    nexthop.s_addr = (in_addr_t) htonl( (uint64_t)radix_tree_lookup(rt, (uint8_t *)&iphdr->daddr) );
 
-    if ( (iphdr->daddr & Device[tno].netmask.s_addr) == Device[tno].subnet.s_addr )
-    {
+    tno = getIfIndexByAddress(nexthop);
+    if ( -1 == tno ) {
+      fprintf(stderr, "No interfaces correspond to nexthop %s\n", in_addr_t2str(nexthop.s_addr, buf, sizeof(buf)));
+      return -1;
+    }
+
+    DebugPrintf("===== Nexthop: %s (if: %s)\n", in_addr_t2str(nexthop.s_addr, buf, sizeof(buf)), ifs[tno].name);
+
+    if ( (iphdr->daddr & ifs[tno].netmask.s_addr) == ifs[tno].subnet.s_addr ) {
       IP2MAC *ip2mac;
 
-      DebugPrintf("[%d]:%s to TargetSegment\n", deviceNo, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
+      DebugPrintf("[%s]:%s to TargetSegment\n", ifs[ifNo].name, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
 
-      if (iphdr->daddr == Device[tno].addr.s_addr)
-      {
-        DebugPrintf("[%d]:recv:myaddr\n", deviceNo);
+      if (iphdr->daddr == ifs[tno].addr.s_addr) {
+        DebugPrintf("[%s]:recv:myaddr\n", ifs[ifNo].name);
         return 1;
       }
 
       ip2mac = Ip2Mac(tno, iphdr->daddr, NULL);
-      if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno != 0)
-      {
-        DebugPrintf("[%d]:Ip2Mac:error or sending\n", deviceNo);
+      if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno != 0) {
+        DebugPrintf("[%s]:Ip2Mac:error or sending\n", ifs[ifNo].name);
         AppendSendData(ip2mac, 1, iphdr->daddr, data, size);
         return -1;
       }
@@ -267,14 +277,13 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
     {
       IP2MAC *ip2mac;
 
-      DebugPrintf("[%d]:%s to NextRouter\n", deviceNo, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)));
+      DebugPrintf("[%s]:%s to Nexthop(%s/%s)\n", ifs[ifNo].name, in_addr_t2str(iphdr->daddr, buf, sizeof(buf)), in_addr_t2str(nexthop.s_addr, buf, sizeof(buf)), ifs[tno].name);
 
-      ip2mac = Ip2Mac(tno, NextRouter.s_addr, NULL);
+      ip2mac = Ip2Mac(tno, nexthop.s_addr, NULL);
 
-      if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno !=0)
-      {
-        DebugPrintf("[%d]:Ip2Mac:error or sending\n", deviceNo);
-        AppendSendData(ip2mac, 1, NextRouter.s_addr, data, size);
+      if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno !=0) {
+        DebugPrintf("[%s]:Ip2Mac:error or sending\n", ifs[ifNo].name);
+        AppendSendData(ip2mac, 1, nexthop.s_addr, data, size);
         return -1;
       }
       else
@@ -284,13 +293,67 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
     }
 
     memcpy(eh->ether_dhost, hwaddr, 6);
-    memcpy(eh->ether_shost, Device[tno].hwaddr, 6);
+    memcpy(eh->ether_shost, ifs[tno].hwaddr, 6);
 
     iphdr->ttl--;
     iphdr->check = 0;
     iphdr->check = checksum2((u_char *)iphdr, sizeof(struct iphdr), option, optionLen);
 
-    write(Device[tno].sock, data, size);
+    write(ifs[tno].sock, data, size);
+  }
+
+  return 0;
+}
+
+/*
+ * load_full_route
+ *
+ * 経路情報の読み込み.
+ *
+ * char *filename 経路情報の記述されたファイル名.
+ */
+int load_full_route(char *filename)
+{
+  FILE *fp;
+  char buf[4096];
+  int prefix[4];
+  int prefixlen;
+  int nexthop[4];
+  int ret;
+  uint8_t addr1[4];
+  uint64_t addr2;
+
+  /* Load from the linx file */
+  fp = fopen(filename, "r");
+  if ( NULL == fp ) {
+    return -1;
+  }
+
+  /* Load the full route */
+  while ( !feof(fp) ) {
+    if ( !fgets(buf, sizeof(buf), fp) ) {
+      continue;
+    }
+    ret = sscanf(buf, "%d.%d.%d.%d/%d %d.%d.%d.%d", &prefix[0], &prefix[1],
+        &prefix[2], &prefix[3], &prefixlen, &nexthop[0],
+        &nexthop[1], &nexthop[2], &nexthop[3]);
+    if ( ret < 0 ) {
+      return -1;
+    }
+
+    /* Convert to u32 */
+    addr1[0] = prefix[0];
+    addr1[1] = prefix[1];
+    addr1[2] = prefix[2];
+    addr1[3] = prefix[3];
+    addr2 = ((uint32_t)nexthop[0] << 24) + ((uint32_t)nexthop[1] << 16)
+      + ((uint32_t)nexthop[2] << 8) + (uint32_t)nexthop[3];
+
+    /* Add an entry */
+    ret = radix_tree_add(rt, addr1, prefixlen, (void *)(uint64_t)addr2);
+    if ( ret < 0 ) {
+      return -1;
+    }
   }
 
   return 0;
@@ -303,18 +366,20 @@ int AnalyzePacket(int deviceNo, u_char *data, int size)
  */
 int Router(void)
 {
-  struct pollfd targets[2];
+  struct pollfd *targets;
   int           nready, i, size;
   u_char        buf[2048];
 
-  targets[0].fd = Device[0].sock;
-  targets[0].events = POLLIN | POLLERR;
-  targets[1].fd = Device[1].sock;
-  targets[1].events = POLLIN | POLLERR;
+  targets = (struct pollfd *)malloc(sizeof(struct pollfd) * ifnum);
+
+  for (i = 0; i < ifnum; i++) {
+    targets[i].fd = ifs[i].sock;
+    targets[i].events = POLLIN | POLLERR;
+  }
 
   while (EndFlag == 0)
   {
-    switch (nready = poll(targets, 2, 100))
+    switch (nready = poll(targets, ifnum, 100))
     {
       case -1:
         if (errno != EINTR)
@@ -324,13 +389,13 @@ int Router(void)
       case 0:
         break;
       default:
-        for (i = 0; i < 2; ++i)
+        for (i = 0; i < ifnum; ++i)
         {
-          if( (targets[i].revents & (POLLIN | POLLERR)) == 0 )
+          if( (targets[i].revents & (POLLIN | POLLERR)) == 0 ) {
             continue;
+          }
 
-          if ( (size = read(Device[i].sock, buf, sizeof(buf))) <= 0 )
-          {
+          if ( (size = read(ifs[i].sock, buf, sizeof(buf))) <= 0 ) {
             DebugPerror("read");
             continue;
           }
@@ -341,6 +406,8 @@ int Router(void)
     }
   }
 
+  free(targets);
+
   return 0;
 }
 
@@ -348,29 +415,12 @@ int DisableIpForward()
 {
   FILE *fp;
 
-  if ( (fp = fopen("/proc/sys/net/ipv4/ip_forward", "w")) == NULL )
-  {
+  if ( (fp = fopen("/proc/sys/net/ipv4/ip_forward", "w")) == NULL ) {
     DebugPrintf("cannot write /proc/sys/net/ipv4/ip_forward\n");
     return -1;
   }
 
   fputs("0", fp);
-  fclose(fp);
-
-  return 0;
-}
-
-int EnableIpForward()
-{
-  FILE *fp;
-
-  if ( (fp = fopen("/proc/sys/net/ipv4/ip_forward", "w")) == NULL )
-  {
-    DebugPrintf("cannot write /proc/sys/net/ipv4/ip_forward\n");
-    return -1;
-  }
-
-  fputs("1", fp);
   fclose(fp);
 
   return 0;
@@ -395,50 +445,72 @@ int main(int argc, char *argv[], char *envp[])
   char            buf[80];
   pthread_attr_t  attr;
   int             status;
+  int             i, res;
 
-  inet_aton(Param.NextRouter, &NextRouter);
-  DebugPrintf("NextRouter=%s\n", my_inet_ntoa_r(&NextRouter, buf, sizeof(buf)));
+  char ifnames[10][16];
 
-  if (GetDeviceInfo(Param.Device1, Device[0].hwaddr, &Device[0].addr, &Device[0].subnet, &Device[0].netmask) == -1)
-  {
-    DebugPrintf("GetDeviceInfo:error:%s\n", Param.Device1);
+  /* Initialize radix tree */
+  rt = radix_tree_init(NULL);
+  if ( NULL == rt ) {
+    perror("Failed to initialize routing table!");
     return -1;
   }
 
-  if ( (Device[0].sock = InitRawSocket(Param.Device1, 1, 0)) == -1 )
-  {
-    DebugPrintf("InitRawSocket:error:%s\n", Param.Device1);
+  /* load the full route */
+  res = load_full_route("entry.txt");
+  if ( 0 != res ) {
+    perror("Failed to load routes!");
     return -1;
   }
 
-  DebugPrintf("%s OK\n", Param.Device1);
-  DebugPrintf("addr=%s\n", my_inet_ntoa_r(&Device[0].addr, buf, sizeof(buf)));
-  DebugPrintf("subnet=%s\n", my_inet_ntoa_r(&Device[0].subnet, buf, sizeof(buf)));
-  DebugPrintf("netmask=%s\n", my_inet_ntoa_r(&Device[0].netmask, buf, sizeof(buf)));
+  /*
+  res = GetDeviceNames(ifnames, &ifnum);
+  if ( 0 != res ) {
+    perror("Failed to get devices name!");
+    return -1;
+  }
+  */
 
-  if (GetDeviceInfo(Param.Device2, Device[1].hwaddr, &Device[1].addr, &Device[1].subnet, &Device[1].netmask) == -1)
-  {
-    DebugPrintf("GetDeviceInfo:error:%s\n", Param.Device2);
+  if (argc <= 1) {
+    printf("Usage: %s if1 if2 ...\n", argv[0]);
+    return 0;
+  }
+
+  ifnum = argc - 1;
+  for (i = 0; i < ifnum; i++)
+    strcpy(ifnames[i], argv[i + 1]);
+
+  /* Interfaces */
+  ifs = (DEVICE *)malloc(sizeof(DEVICE) * ifnum);
+  if (ifs == NULL) {
+    perror("malloc");
     return -1;
   }
 
-  if ( (Device[1].sock = InitRawSocket(Param.Device2, 1, 0)) == -1 )
-  {
-    DebugPrintf("InitRawSocket:error:%s\n", Param.Device2);
-    return -1;
+  for (i = 0; i < ifnum; i++) {
+    DEVICE *iface = &ifs[i];
+    strcpy(iface->name, ifnames[i]);
+    if (GetDeviceInfo(ifnames[i], iface->hwaddr, &iface->addr, &iface->subnet, &iface->netmask) == -1) {
+      DebugPrintf("GetDeviceInfo:error:%s\n", ifnames[i]);
+      return -1;
+    }
+
+    if ( (iface->sock = InitRawSocket(ifnames[i], 1, 0)) == -1 ) {
+      DebugPrintf("InitRawSocket:error:%s\n", ifnames[i]);
+      return -1;
+    }
+
+    DebugPrintf("%s OK ", iface->name);
+    DebugPrintf("addr=%s ", my_inet_ntoa_r(&iface->addr, buf, sizeof(buf)));
+    DebugPrintf("subnet=%s ", my_inet_ntoa_r(&iface->subnet, buf, sizeof(buf)));
+    DebugPrintf("netmask=%s\n", my_inet_ntoa_r(&iface->netmask, buf, sizeof(buf)));
   }
-
-  DebugPrintf("%s OK\n", Param.Device2);
-  DebugPrintf("addr=%s\n", my_inet_ntoa_r(&Device[1].addr, buf, sizeof(buf)));
-  DebugPrintf("subnet=%s\n", my_inet_ntoa_r(&Device[1].subnet, buf, sizeof(buf)));
-  DebugPrintf("netmask=%s\n", my_inet_ntoa_r(&Device[1].netmask, buf, sizeof(buf)));
-
+  
   DisableIpForward();
 
   pthread_attr_init(&attr);
 
-  if ( (status = pthread_create(&BufTid, &attr, BufThread, NULL)) != 0 )
-  {
+  if ( (status = pthread_create(&BufTid, &attr, BufThread, NULL)) != 0 ) {
     DebugPrintf("pthread_create:%s\n", strerror(status));
   }
 
@@ -456,8 +528,10 @@ int main(int argc, char *argv[], char *envp[])
 
   pthread_join(BufTid, NULL);
 
-  close(Device[0].sock);
-  close(Device[1].sock);
-  
+  for (i = 0; i < ifnum; i++)
+    close(ifs[i].sock);
+
+  free(ifs);
+
   return 0;
 }

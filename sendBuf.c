@@ -18,7 +18,7 @@ extern int DebugPerror(char *msg);
 #define MAX_BUCKET_SIZE (1024 * 1024)
 
 
-int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, int size)
+int AppendSendData(IP2MAC *ip2mac, int ifNo, in_addr_t addr, u_char *data, int size)
 {
     SEND_DATA  *sd = &ip2mac->sd;
     DATA_BUF   *d;
@@ -73,7 +73,7 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
     pthread_mutex_unlock(&sd->mutex);
 
     DebugPrintf("AppendSendData:[%d] %s %dbytes(Total=%lu:%lubytes)\n",
-        deviceNo,
+        ifNo,
         in_addr_t2str(addr, buf, sizeof(buf)),
         size,
         sd->dno,
@@ -121,7 +121,7 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
 
     free(d);
 
-    DebugPrintf("GetSendData:[%d] %s %dbytes\n", ip2mac->deviceNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), *size);
+    DebugPrintf("GetSendData:[%d] %s %dbytes\n", ip2mac->ifNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), *size);
 
     return 0;
  }
@@ -154,7 +154,7 @@ int AppendSendData(IP2MAC *ip2mac, int deviceNo, in_addr_t addr, u_char *data, i
 
      pthread_mutex_unlock(&sd->mutex);
 
-     DebugPrintf("FreeSendData:[%d]\n", ip2mac->deviceNo);
+     DebugPrintf("FreeSendData:[%d]\n", ip2mac->ifNo);
 
      return 0;
  }

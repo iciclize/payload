@@ -21,8 +21,7 @@ int InitRawSocket(char *device, int promiscFlag, int ipOnly)
 
   int protocolID = ipOnly ? htons(ETH_P_IP) : htons(ETH_P_ALL);
 
-  if ( ( sock = socket(PF_PACKET, SOCK_RAW, protocolID) ) < 0 )
-  {
+  if ( ( sock = socket(PF_PACKET, SOCK_RAW, protocolID) ) < 0 ) {
     DebugPerror("socket() failed.");
     return -1;
   }
@@ -30,8 +29,7 @@ int InitRawSocket(char *device, int promiscFlag, int ipOnly)
   memset(&ifreq, 0, sizeof(struct ifreq));
   strncpy(ifreq.ifr_name, device, sizeof(ifreq.ifr_name) - 1);
 
-  if (ioctl(sock, SIOCGIFINDEX, &ifreq) < 0)
-  {
+  if (ioctl(sock, SIOCGIFINDEX, &ifreq) < 0) {
     DebugPerror("ioctl() failed.");
     close(sock);
 
@@ -41,24 +39,21 @@ int InitRawSocket(char *device, int promiscFlag, int ipOnly)
   sa.sll_family = PF_PACKET;
   sa.sll_protocol = protocolID;
   sa.sll_ifindex = ifreq.ifr_ifindex;
-  if (bind(sock, (struct sockaddr *)&sa, sizeof(sa)) < 0)
-  {
+  if (bind(sock, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
     DebugPerror("bind() failed.");
     close(sock);
     return -1;
   }
 
   if (promiscFlag) {
-    if (ioctl(sock, SIOCGIFFLAGS, &ifreq) < 0 )
-    {
+    if (ioctl(sock, SIOCGIFFLAGS, &ifreq) < 0 ) {
       DebugPerror("ioctl() failed.");
       close(sock);
       return -1;
     }
 
     ifreq.ifr_flags = ifreq.ifr_flags | IFF_PROMISC;
-    if (ioctl(sock, SIOCSIFFLAGS, &ifreq) < 0)
-    {
+    if (ioctl(sock, SIOCSIFFLAGS, &ifreq) < 0) {
       DebugPerror("ioctl failed.");
       close(sock);
       return -1;
@@ -68,6 +63,52 @@ int InitRawSocket(char *device, int promiscFlag, int ipOnly)
   return sock;
 }
 
+/*
+ * GetDeviceNames
+ *
+ * インターフェースの一覧を取得する.
+ *
+ * char (*ifnames)[16] カーネルから返ってきたインターフェース名が入る配列. 十分な要素数が必要.
+ * int   *ifrn    インターフェースの個数が格納される変数
+ */
+int GetDeviceNames(char (*ifnames)[16], int *ifrn)
+{
+  struct ifreq  ifr[10];
+  struct ifconf ifc;
+  int fd;
+  int nifs, i;
+
+  fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if ( (fd = socket(PF_INET, SOCK_DGRAM, 0)) < 0 ) {
+    DebugPerror("socket");
+    return -1;
+  }
+
+  ifc.ifc_len = sizeof(ifr);            /* データを受け取る部分の長さ */
+  ifc.ifc_ifcu.ifcu_buf = (void *)ifr;  /* Kernelからデータを受け取る部分を指定 */
+
+  ioctl(fd, SIOCGIFCONF, &ifc);
+  if (ioctl(fd, SIOCGIFHWADDR, &ifr) == -1) {
+    DebugPerror("ioctl");
+    close(fd);
+    return -1;
+  }
+
+  nifs = ifc.ifc_len / sizeof(struct ifreq); /* Kernelから返ってきた数を計算 */
+
+  *ifrn = nifs;
+
+  /* すべてのインターフェース名を表示 */
+  for (i = 0; i < nifs; i++) {
+    strcpy(ifnames[i], ifr[i].ifr_name);
+    printf("%d: %s\n", i, ifr[i].ifr_name);
+  }
+
+  close(fd);
+
+  return 0;
+}
+
 int GetDeviceInfo(char *device, u_char hwaddr[6], struct in_addr *uaddr, struct in_addr *subnet, struct in_addr *mask)
 {
   struct  ifreq ifreq;
@@ -75,8 +116,7 @@ int GetDeviceInfo(char *device, u_char hwaddr[6], struct in_addr *uaddr, struct 
   int     sock;
   u_char *p;
 
-  if ( (sock = socket(PF_INET, SOCK_DGRAM, 0)) < 0 )
-  {
+  if ( (sock = socket(PF_INET, SOCK_DGRAM, 0)) < 0 ) {
     DebugPerror("socket");
     return -1;
   }
@@ -84,8 +124,7 @@ int GetDeviceInfo(char *device, u_char hwaddr[6], struct in_addr *uaddr, struct 
   memset(&ifreq, 0, sizeof(struct ifreq));
   strncpy(ifreq.ifr_name, device, sizeof(ifreq.ifr_name) - 1);
 
-  if (ioctl(sock, SIOCGIFHWADDR, &ifreq) == -1)
-  {
+  if (ioctl(sock, SIOCGIFHWADDR, &ifreq) == -1) {
     DebugPerror("ioctl");
     close(sock);
     return -1;
@@ -96,14 +135,12 @@ int GetDeviceInfo(char *device, u_char hwaddr[6], struct in_addr *uaddr, struct 
     memcpy(hwaddr, p, 6);
   }
 
-  if (ioctl(sock, SIOCGIFADDR, &ifreq) == -1)
-  {
+  if (ioctl(sock, SIOCGIFADDR, &ifreq) == -1) {
     DebugPerror("ioctl");
     close(sock);
     return -1;
   }
-  else if (ifreq.ifr_addr.sa_family != PF_INET)
-  {
+  else if (ifreq.ifr_addr.sa_family != PF_INET) {
     DebugPrintf("%s not PF_INET\n", device);
     close(sock);
     return -1;
@@ -114,8 +151,7 @@ int GetDeviceInfo(char *device, u_char hwaddr[6], struct in_addr *uaddr, struct 
     *uaddr = addr.sin_addr;
   }
 
-  if (ioctl(sock, SIOCGIFNETMASK, &ifreq) == -1)
-  {
+  if (ioctl(sock, SIOCGIFNETMASK, &ifreq) == -1) {
     DebugPerror("ioctl");
     close(sock);
     return -1;
@@ -235,8 +271,7 @@ int PrintIpHeader(struct iphdr *iphdr, u_char *option, int optionLen, FILE *fp)
   fprintf(fp, "ttl=%u, ", iphdr->ttl);
   fprintf(fp, "protocol=%u", iphdr->protocol);
 
-  if (iphdr->protocol <= 17)
-  {
+  if (iphdr->protocol <= 17) {
     fprintf(fp, "(%s), ", Proto[iphdr->protocol]);
   }
   else
@@ -246,11 +281,9 @@ int PrintIpHeader(struct iphdr *iphdr, u_char *option, int optionLen, FILE *fp)
   fprintf(fp, "check=%x\n", iphdr->check);
   fprintf(fp, "saddr=%s >>>>>> ", ip_ip2str(iphdr->saddr, buf, sizeof(buf)));
   fprintf(fp, "daddr=%s\n", ip_ip2str(iphdr->daddr, buf, sizeof(buf)));
-  if (optionLen > 0)
-  {
+  if (optionLen > 0) {
     fprintf(fp, "option:");
-    for (i = 0; i < optionLen; i++)
-    {
+    for (i = 0; i < optionLen; i++) {
       if (i != 0)
         fprintf(fp, ":%02x", option[i]);
       else
@@ -270,18 +303,15 @@ u_int16_t checksum(u_char *data, int len)
   sum = 0;
   ptr = (u_int16_t *)data;
 
-  for (c = len; c > 1; c -= 2)
-  {
+  for (c = len; c > 1; c -= 2) {
     sum += (*ptr);
-    if (sum & 0x80000000)
-    {
+    if (sum & 0x80000000) {
       sum = (sum & 0xFFFF) + (sum >> 16);
     }
     ptr ++;
   }
 
-  if (c == 1)
-  {
+  if (c == 1) {
     u_int16_t val;
     
     val = 0;
@@ -305,25 +335,21 @@ u_int16_t checksum2(u_char *data1, int len1, u_char *data2, int len2)
 
   sum = 0;
   ptr = (u_int16_t *)data1;
-  for (c = len1; c > 1; c -= 2)
-  {
+  for (c = len1; c > 1; c -= 2) {
     sum += (*ptr);
-    if (sum & 0x80000000)
-    {
+    if (sum & 0x80000000) {
       sum = (sum & 0xFFFF) + (sum >> 16);
     }
     ptr++;
   }
 
-  if (c == 1)
-  {
+  if (c == 1) {
     u_int16_t val;
     
     val = ((*ptr) << 8) + (*data2);
     sum += val;
 
-    if (sum & 0x80000000)
-    {
+    if (sum & 0x80000000) {
       sum = (sum & 0xFFFF) + (sum >> 16);
     }
     ptr = (u_int16_t *)(data2 + 1);
@@ -334,18 +360,15 @@ u_int16_t checksum2(u_char *data1, int len1, u_char *data2, int len2)
     ptr = (u_int16_t *)data2;
   }
 
-  for (c = len2; c > 1; c -= 2)
-  {
+  for (c = len2; c > 1; c -= 2) {
     sum += (*ptr);
-    if (sum & 0x80000000)
-    {
+    if (sum & 0x80000000) {
       sum = (sum & 0xFFFF) + (sum >> 16);
     }
     ptr++;
   }
 
-  if (c == 1)
-  {
+  if (c == 1) {
     u_int16_t val;
 
     val = 0;
@@ -403,25 +426,21 @@ int SendArpRequestB(int sock, in_addr_t target_ip, u_char target_mac[6], in_addr
   arp.arp.arp_pln = 4;
   arp.arp.arp_op  = htons(ARPOP_REQUEST);
 
-  for (i = 0; i < 6; i++)
-  {
+  for (i = 0; i < 6; i++) {
     arp.arp.arp_sha[i] = my_mac[i];
   }
 
-  for (i = 0; i < 6; i++)
-  {
+  for (i = 0; i < 6; i++) {
     arp.arp.arp_tha[i] = 0;
   }
 
   lc.l = my_ip;
-  for (i = 0; i < 4; i++)
-  {
+  for (i = 0; i < 4; i++) {
     arp.arp.arp_spa[i] = lc.c[i];
   }
 
   lc.l = target_ip;
-  for (i = 0; i < 4; i++)
-  {
+  for (i = 0; i < 4; i++) {
     arp.arp.arp_tpa[i] = lc.c[i];
   }
 
