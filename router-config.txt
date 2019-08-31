@@ -1,0 +1,7 @@
+IP-TTL=64
+MTU=1500
+MSS=1460
+wandev=eth0
+gateway=192.168.10.1
+landevs=eth1,eth2
+DhcpRequestLeaseTime=600

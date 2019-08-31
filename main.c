@@ -19,14 +19,12 @@
 #include "base.h"
 #include "ip2mac.h"
 #include "sendBuf.h"
+#include "params.h"
+#include "napt.h"
 
-typedef struct {
-  int   DebugOut;
-} PARAM;
+PARAM Param;
 
-PARAM Param = { 1 };
-
-int             EndFlag = 0;
+int EndFlag = 0;
 
 struct radix_tree *rt; /* Routing table */
 DEVICE *ifs;           /* Interfaces */
@@ -34,14 +32,9 @@ int ifnum;             /* The number of interfaces */
 
 int getIfIndexByAddress(struct in_addr nexthop)
 {
-  int i;
-
-  for (i = 0; i < ifnum; i++) {
-    if ( (nexthop.s_addr & ifs[i].netmask.s_addr) == ifs[i].subnet.s_addr ) {
+  for (int i = 0; i < ifnum; i++)
+    if ( (nexthop.s_addr & ifs[i].netmask.s_addr) == ifs[i].subnet.s_addr )
       return i;
-    }
-  }
-
   return -1;
 }
 
@@ -224,7 +217,7 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
       }
 
       memcpy(option, ptr, optionLen);
-      ptr  += optionLen;
+      ptr  += optionLen; /* ポインタはIPペイロード */
       lest -= optionLen;
     }
 
@@ -242,6 +235,11 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
     }
 
     PrintIpHeader(iphdr, option, optionLen, stdout);
+
+    /*
+     * NAPTする
+     */
+    DoNAPT(ifNo, iphdr, ptr, lest);
 
     struct in_addr nexthop;
     /* ネクストホップ探し、バイトオーダーをビッグエンディアンに */

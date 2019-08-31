@@ -21,7 +21,7 @@
  * SOFTWARE.
  */
 
-#include "../radix.h"
+#include "radix.h"
 #include <stdio.h>
 #include <sys/time.h>
 #include <inttypes.h>
