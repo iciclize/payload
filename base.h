@@ -37,4 +37,12 @@ typedef struct {
   SEND_DATA     sd;
 } IP2MAC;
 
+struct pseudo_ip {
+  struct in_addr ip_src;
+  struct in_addr ip_dst;
+  uint8_t dummy;
+  uint8_t ip_p;
+  uint8_t ip_len;
+};
+
 #endif /* BASE_H */

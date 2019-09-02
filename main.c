@@ -209,7 +209,7 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
 
     iphdr = (struct iphdr *)ptr;
     ptr  += sizeof(struct iphdr); /* ポインタはIPペイロードもしくはIPヘッダのオプション部分に進む */
-    lest -= sizeof(struct iphdr); /* フレーム残りサイズ */
+    lest -= sizeof(struct iphdr); /* IPペイロード長 */
 
     optionLen = iphdr->ihl * 4 - sizeof(struct iphdr); /* IPヘッダのオプション部分のサイズ. ヘッダ長の値から20Bytes引いているんですね */
     if (optionLen > 0) {
@@ -220,7 +220,7 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
 
       memcpy(option, ptr, optionLen);
       ptr  += optionLen; /* ポインタはIPペイロード */
-      lest -= optionLen;
+      lest -= optionLen; /* IPペイロード長 */
     }
 
     /* IPチェックサムを検証して壊れたパケットを弾く */
@@ -236,10 +236,15 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
       return -1;
     }
 
+    struct in_addr macbook;
+    inet_aton("192.168.10.108", &macbook);
+
     /*
      * NAPTする
      */
-    // DoNAPT(ifNo, iphdr, ptr, lest);
+    if (iphdr->saddr != macbook.s_addr) {
+      DoNAPT(ifNo, (struct ip *)iphdr, ptr, lest);
+    }
 
     struct routing_table_entry *entry = lookup_route_entry(iphdr->daddr);
     if (entry == NULL) {
@@ -251,8 +256,6 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
 
     if ((iphdr->daddr & ifs[tno].netmask.s_addr) == ifs[tno].subnet.s_addr) {
       /* Target Segment */
-      struct in_addr macbook;
-      inet_aton("192.168.10.108", &macbook);
       if (iphdr->saddr != macbook.s_addr) {
         PrintEtherHeader(eh, stderr);
         PrintIpHeader(iphdr, option, optionLen, stderr);
@@ -309,7 +312,8 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
     if (iphdr->protocol == 6) {
       print_tcp((struct tcphdr *)ptr);
     } else if (iphdr->protocol == 17) {
-      ((struct udphdr *)(ptr))->check = 0x0000;
+      // TODO: test
+      // ((struct udphdr *)ptr)->check = 0x0000;
       print_udp((struct udphdr *)ptr);
     }
 
