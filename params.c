@@ -52,6 +52,8 @@ int SetDefaultParam()
   Param.MTU = DEFAULT_MTU;
   Param.IpTTL = DEFAULT_IP_TTL;
   Param.MSS = DEFAULT_MSS;
+  Param.ifnum = 1;
+  Param.devices[0] = 0;
 
   return(0);
 }
@@ -80,6 +82,10 @@ int ReadParam(char *fname)
         if ( (ptr = strtok_r(NULL, "\r\n", &saveptr)) != NULL ) {
           Param.IpTTL = atoi(ptr);
         }
+      } else if (strcmp(ptr, "DebugOut") == 0) {
+        if ( (ptr = strtok_r(NULL, "\r\n", &saveptr)) != NULL) {
+          Param.DebugOut = atoi(ptr);
+        }
       } else if (strcmp(ptr, "MTU") == 0) {
         if ( (ptr = strtok_r(NULL, "\r\n", &saveptr)) != NULL) {
           Param.MTU = atoi(ptr);
@@ -103,10 +109,12 @@ int ReadParam(char *fname)
       } else if (strcmp(ptr, "wandev") == 0) {
         if ( (ptr = strtok_r(NULL, " \r\n", &saveptr)) != NULL ) {
           Param.devices[0] = strdup(ptr);
+          Param.ifnum++;
         }
       } else if (strcmp(ptr, "landevs") == 0) {
         for (int i = 1; (ptr = strtok_r(NULL, ",\r\n", &saveptr)) != NULL; i++ ) {
           Param.devices[i] = strdup(ptr);
+          Param.ifnum++;
         }
       } else if (strcmp(ptr, "DhcpRequestLeaseTime") == 0) {
         if ( (ptr = strtok_r(NULL, " \r\n", &saveptr)) != NULL ) {
@@ -118,6 +126,11 @@ int ReadParam(char *fname)
 
   fclose(fp);
 
-  return(0);
+  if (*Param.devices[0] == 0) {
+    fprintf(stderr, "Error. No WAN-side devices specified.\n");
+    return -1;
+  }
+
+  return 0;
 }
 

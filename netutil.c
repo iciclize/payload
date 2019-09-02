@@ -7,8 +7,12 @@
 #include <linux/if.h>
 #include <net/ethernet.h>
 #include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <netpacket/packet.h>
 #include <netinet/if_ether.h>
+
+#include "netutil.h"
 
 extern int DebugPrintf(char *fmt, ...);
 extern int DebugPerror(char *msg);
@@ -201,24 +205,24 @@ int PrintEtherHeader(struct ether_header *eh, FILE *fp)
 {
   char buf[80];
   
-  fprintf(fp, "ether_header-------------------------------------------------\n");
-  fprintf(fp, "ether_dhost=%s\n", my_ether_ntoa_r(eh->ether_dhost, buf, sizeof(buf)));
-  fprintf(fp, "ether_shost=%s\n", my_ether_ntoa_r(eh->ether_shost, buf, sizeof(buf)));
-  fprintf(fp, "ether_type=%02x", ntohs(eh->ether_type));
+  DebugPrintf("ether_header-------------------------------------------------\n");
+  DebugPrintf("ether_dhost=%s\n", my_ether_ntoa_r(eh->ether_dhost, buf, sizeof(buf)));
+  DebugPrintf("ether_shost=%s\n", my_ether_ntoa_r(eh->ether_shost, buf, sizeof(buf)));
+  DebugPrintf("ether_type=%02x", ntohs(eh->ether_type));
 
   switch( ntohs(eh->ether_type) )
   {
     case ETH_P_IP:
-      fprintf(fp, "(IP)\n");
+      DebugPrintf("(IP)\n");
       break;
     case ETH_P_IPV6:
-      fprintf(fp, "(IPv6)\n");
+      DebugPrintf("(IPv6)\n");
       break;
     case ETH_P_ARP:
-      fprintf(fp, "(ARP)\n");
+      DebugPrintf("(ARP)\n");
       break;
     default:
-      fprintf(fp, "(unknown)\n");
+      DebugPrintf("(unknown)\n");
       break;
   }
 
@@ -261,37 +265,84 @@ int PrintIpHeader(struct iphdr *iphdr, u_char *option, int optionLen, FILE *fp)
   int i;
   char buf[80];
 
-  fprintf(fp, "ip-------------------------------------------\n");
-  fprintf(fp, "version=%u, ", iphdr->version);
-  fprintf(fp, "ihl=%u, ", iphdr->ihl);
-  fprintf(fp, "tos=%x, ", iphdr->tos);
-  fprintf(fp, "tot_len=%u, ", ntohs(iphdr->tot_len));
-  fprintf(fp, "id=%u, ", ntohs(iphdr->id));
-  fprintf(fp, "frag_off=%x, %u, ", (ntohs(iphdr->frag_off) >> 13) & 0x07, ntohs(iphdr->frag_off) & 0x1FFF );
-  fprintf(fp, "ttl=%u, ", iphdr->ttl);
-  fprintf(fp, "protocol=%u", iphdr->protocol);
+  /* debug filter */
+  /*
+  struct in_addr macbook;
+  inet_aton("192.168.10.108", &macbook);
+  if (iphdr->saddr == macbook.s_addr)
+    return 1;
+    */
+
+  DebugPrintf("ip-------------------------------------------\n");
+  DebugPrintf("version=%u, ", iphdr->version);
+  DebugPrintf("ihl=%u, ", iphdr->ihl);
+  DebugPrintf("tos=%x, ", iphdr->tos);
+  DebugPrintf("tot_len=%u, ", ntohs(iphdr->tot_len));
+  DebugPrintf("id=%u, ", ntohs(iphdr->id));
+  DebugPrintf("frag_off=%x, %u, ", (ntohs(iphdr->frag_off) >> 13) & 0x07, ntohs(iphdr->frag_off) & 0x1FFF );
+  DebugPrintf("ttl=%u, ", iphdr->ttl);
+  DebugPrintf("protocol=%u", iphdr->protocol);
 
   if (iphdr->protocol <= 17) {
-    fprintf(fp, "(%s), ", Proto[iphdr->protocol]);
+    DebugPrintf("(%s), ", Proto[iphdr->protocol]);
+  } else {
+    DebugPrintf("(undefined), ");
   }
-  else
-  {
-    fprintf(fp, "(undefined), ");
-  }
-  fprintf(fp, "check=%x\n", iphdr->check);
-  fprintf(fp, "saddr=%s >>>>>> ", ip_ip2str(iphdr->saddr, buf, sizeof(buf)));
-  fprintf(fp, "daddr=%s\n", ip_ip2str(iphdr->daddr, buf, sizeof(buf)));
+
+  DebugPrintf("check=%x\n", iphdr->check);
+  DebugPrintf("saddr=%s >>>>>> ", ip_ip2str(iphdr->saddr, buf, sizeof(buf)));
+  DebugPrintf("daddr=%s\n", ip_ip2str(iphdr->daddr, buf, sizeof(buf)));
   if (optionLen > 0) {
-    fprintf(fp, "option:");
+    DebugPrintf("option:");
     for (i = 0; i < optionLen; i++) {
       if (i != 0)
-        fprintf(fp, ":%02x", option[i]);
+        DebugPrintf(":%02x", option[i]);
       else
-        fprintf(fp, "%02x", option[i]);
+        DebugPrintf("%02x", option[i]);
     }
   }
 
   return 0;
+}
+
+/*
+ *  ## TCPヘッダの情報を表示する
+ */
+int print_tcp(struct tcphdr *tcp)
+{
+  printf("tcp-------------------------------------------\n");
+
+  printf("source=%u >>>>>> ", ntohs(tcp->source));
+  printf("dest=%u\n", ntohs(tcp->dest));
+  printf("seq=%u\n", ntohl(tcp->seq));
+  printf("ack_seq=%u\n,", ntohl(tcp->ack_seq));
+  printf("doff=%u,", tcp->doff);
+  printf("urg=%u,", tcp->urg);
+  printf("ack=%u,", tcp->ack);
+  printf("psh=%u,", tcp->psh);
+  printf("rst=%u,", tcp->rst);
+  printf("syn=%u,", tcp->syn);
+  printf("fin=%u,", tcp->fin);
+  printf("window=%u\n", ntohs(tcp->window));
+  printf("check=%04x,", ntohs(tcp->check));
+  printf("urg_ptr=%u\n", ntohs(tcp->urg_ptr));
+
+  return(0);
+}
+
+/*
+ *  ## UDPヘッダ情報を表示する
+ */
+int print_udp(struct udphdr *udp)
+{
+  printf("udp----------------------------------------------------\n");
+
+  printf("source=%d\n", ntohs(udp->source));
+  printf("dest=%d\n", ntohs(udp->dest));
+  printf("len=%d\n", ntohs(udp->len));
+  printf("check=%04x\n", ntohs(udp->check));
+
+  return(0);
 }
 
 u_int16_t checksum(u_char *data, int len)

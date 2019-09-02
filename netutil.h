@@ -5,6 +5,8 @@ int GetDeviceNames(char (*ifnames)[16], int *ifrn);
 int GetDeviceInfo(char *device, u_char hwaddr[6], struct in_addr *uaddr, struct in_addr *subnet, struct in_addr *mask);
 int PrintEtherHeader(struct ether_header *eh, FILE *fp);
 int PrintIpHeader(struct iphdr *iphdr, u_char *option, int optionLen, FILE *fp);
+int print_tcp(struct tcphdr *tcp);
+int print_udp(struct udphdr *udp);
 int InitRawSocket(char *device, int promiscFlag, int ipOnly);
 u_int16_t checksum(u_char *data, int len);
 u_int16_t checksum2(u_char *data1, int len1, u_char *data2, int len2);

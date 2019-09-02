@@ -13,6 +13,7 @@
 
 typedef struct {
   int  DebugOut;
+  int ifnum;
   char  *devices[16];
   u_int8_t  mymac[6];
   struct in_addr  myip;

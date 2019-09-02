@@ -130,7 +130,7 @@ IP2MAC *Ip2MacSearch(int ifNo, in_addr_t addr, u_char *hwaddr)
   memset(&ip2mac->sd, 0, sizeof(SEND_DATA));
   pthread_mutex_init(&ip2mac->sd.mutex, NULL);
 
-  // DebugPrintf("Ip2Mac ADD [%d] %s = %d\n", ifNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), no);
+  DebugPrintf("Ip2Mac ADD [%d] %s = %d\n", ifNo, in_addr_t2str(ip2mac->addr, buf, sizeof(buf)), no);
 
   return ip2mac;
 }
@@ -144,12 +144,12 @@ IP2MAC *Ip2Mac(int ifNo, in_addr_t addr, u_char *hwaddr)
   ip2mac = Ip2MacSearch(ifNo, addr, hwaddr);
 
   if (ip2mac->flag == FLAG_OK) {
-    // DebugPrintf("Ip2Mac(%s):OK\n", in_addr_t2str(addr, buf, sizeof(buf)));
+    DebugPrintf("Ip2Mac(%s):OK\n", in_addr_t2str(addr, buf, sizeof(buf)));
     return ip2mac;
   }
   else {
-    // DebugPrintf("Ip2Mac(%s):NG\n", in_addr_t2str(addr, buf, sizeof(buf)));
-    DebugPrintf("Ip2Mac(%s):Send Aep Request\n", in_addr_t2str(addr, buf, sizeof(buf)));
+    DebugPrintf("Ip2Mac(%s):NG\n", in_addr_t2str(addr, buf, sizeof(buf)));
+    DebugPrintf("Ip2Mac(%s):Send Arp Request\n", in_addr_t2str(addr, buf, sizeof(buf)));
     SendArpRequestB(ifs[ifNo].sock, addr, bcast, ifs[ifNo].addr.s_addr, ifs[ifNo].hwaddr);
     return ip2mac;
   }
@@ -185,6 +185,9 @@ int BufferSendOne(int ifNo, IP2MAC *ip2mac)
     }
 
     memcpy(eh.ether_dhost, ip2mac->hwaddr, 6);
+    // TODO: test
+    // memcpy(eh.ether_shost, ifs[ip2mac->ifNo].hwaddr, 6);
+
     memcpy(data, &eh, sizeof(struct ether_header));
 
     DebugPrintf("iphdr.ttl %d->%d\n", iphdr.ttl, iphdr.ttl - 1);
@@ -197,14 +200,10 @@ int BufferSendOne(int ifNo, IP2MAC *ip2mac)
     DebugPrintf("write:BufferSendOne:[%d] %dbytes\n", ifNo, size);
     write(ifs[ifNo].sock, data, size);
 
-    /* */
-    DebugPrintf("***********************************[%d]\n", ifNo);
-    // print_ether_header(&eh);
-    // print_ip(&ip);
-    PrintEtherHeader(&eh, stdout);
-    PrintIpHeader(&iphdr, "", 0, stdout);
-    DebugPrintf("***********************************[%d}\n", ifNo);
-    /* */
+    DebugPrintf("***********************************[%s]\n", ifs[ifNo].name);
+    PrintEtherHeader(&eh, stderr);
+    PrintIpHeader(&iphdr, "", 0, stderr);
+    DebugPrintf("***********************************[%s]\n", ifs[ifNo].name);
   }
 
   return 0;
