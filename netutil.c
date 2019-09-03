@@ -405,9 +405,7 @@ u_int16_t checksum2(u_char *data1, int len1, u_char *data2, int len2)
     }
     ptr = (u_int16_t *)(data2 + 1);
     len2--;
-  }
-  else
-  {
+  } else {
     ptr = (u_int16_t *)data2;
   }
 
@@ -427,8 +425,7 @@ u_int16_t checksum2(u_char *data1, int len1, u_char *data2, int len2)
     sum += val;
   }
 
-  while (sum >> 16)
-  {
+  while (sum >> 16) {
     sum = (sum & 0xFFFF) + (sum >> 16);
   }
 

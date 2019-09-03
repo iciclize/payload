@@ -144,7 +144,7 @@ int SendIcmpTimeExceeded(int ifNo, struct ether_header *eh, struct iphdr *iphdr,
 int AnalyzePacket(int ifNo, u_char *data, int size)
 {
   u_char *ptr;
-  size_t     lest;
+  int  lest;
   struct  ether_header *eh;
   char    buf[80];
   int     tno;
@@ -201,6 +201,9 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
     u_char        option[1500];
     int           optionLen;
 
+    struct in_addr macbook;
+    inet_aton("192.168.10.108", &macbook);
+
     /* IPヘッダは20Bytesはあるのに残りのフレームサイズがそれより小さいのはおかしいという話 */
     if (lest < sizeof(struct iphdr)) {
       DebugPrintf("[%s]:lest(%d) < sizeof(struct iphdr)\n", ifs[ifNo].name, lest);
@@ -209,7 +212,7 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
 
     iphdr = (struct iphdr *)ptr;
     ptr  += sizeof(struct iphdr); /* ポインタはIPペイロードもしくはIPヘッダのオプション部分に進む */
-    lest -= sizeof(struct iphdr); /* IPペイロード長 */
+    lest -= sizeof(struct iphdr); /* IPペイロード長(CRC部のサイズも含んでいる…？) */
 
     optionLen = iphdr->ihl * 4 - sizeof(struct iphdr); /* IPヘッダのオプション部分のサイズ. ヘッダ長の値から20Bytes引いているんですね */
     if (optionLen > 0) {
@@ -221,6 +224,8 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
       memcpy(option, ptr, optionLen);
       ptr  += optionLen; /* ポインタはIPペイロード */
       lest -= optionLen; /* IPペイロード長 */
+
+      printf("\nIPペイロード(オプションあり)長: %d\n\n", lest);
     }
 
     /* IPチェックサムを検証して壊れたパケットを弾く */
@@ -236,14 +241,11 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
       return -1;
     }
 
-    struct in_addr macbook;
-    inet_aton("192.168.10.108", &macbook);
-
     /*
      * NAPTする
      */
     if (iphdr->saddr != macbook.s_addr) {
-      DoNAPT(ifNo, (struct ip *)iphdr, ptr, lest);
+      DoNAPT(ifNo, (struct ip *)iphdr, ptr, ntohs(iphdr->tot_len) - iphdr->ihl * 4);
     }
 
     struct routing_table_entry *entry = lookup_route_entry(iphdr->daddr);
@@ -257,8 +259,8 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
     if ((iphdr->daddr & ifs[tno].netmask.s_addr) == ifs[tno].subnet.s_addr) {
       /* Target Segment */
       if (iphdr->saddr != macbook.s_addr) {
-        PrintEtherHeader(eh, stderr);
-        PrintIpHeader(iphdr, option, optionLen, stderr);
+        // PrintEtherHeader(eh, stderr);
+        // PrintIpHeader(iphdr, option, optionLen, stderr);
       }
       IP2MAC *ip2mac;
 
@@ -278,16 +280,13 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
         memcpy(hwaddr, ip2mac->hwaddr, 6);
       }
     } else {
-      PrintEtherHeader(eh, stderr);
-      PrintIpHeader(iphdr, option, optionLen, stderr);
+      // PrintEtherHeader(eh, stderr);
+      // PrintIpHeader(iphdr, option, optionLen, stderr);
       char buf2[80];
       DebugPrintf("Nexthop(interface): %s (if: %s/%s)\n", in_addr_t2str(entry->gateway, buf, sizeof(buf)), ifs[tno].name, in_addr_t2str(ifs[tno].addr.s_addr, buf2, sizeof(buf2)));
 
       IP2MAC *ip2mac;
       ip2mac = Ip2Mac(tno, entry->gateway, NULL);
-
-      // TODO: test (NAPT)
-      // iphdr->saddr = ifs[0].addr.s_addr;
 
       if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno != 0) {
         DebugPrintf("[%s]:Ip2Mac:error or sending\n", ifs[ifNo].name);
@@ -306,14 +305,12 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
     iphdr->check = checksum2((u_char *)iphdr, sizeof(struct iphdr), option, optionLen);
 
     fprintf(stderr, " >>>>>>>> Written to %s <<<<<<<<\n", ifs[tno].name);
-    PrintEtherHeader(eh, stderr);
+    // PrintEtherHeader(eh, stderr);
     PrintIpHeader(iphdr, option, optionLen, stderr);
 
     if (iphdr->protocol == 6) {
       print_tcp((struct tcphdr *)ptr);
     } else if (iphdr->protocol == 17) {
-      // TODO: test
-      // ((struct udphdr *)ptr)->check = 0x0000;
       print_udp((struct udphdr *)ptr);
     }
 
