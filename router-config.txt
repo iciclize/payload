@@ -1,4 +1,4 @@
-DebugOut=1
+DebugOut=0
 IP-TTL=64
 MTU=1500
 MSS=1460

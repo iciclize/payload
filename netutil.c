@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <ctype.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -199,6 +200,43 @@ char *in_addr_t2str(in_addr_t addr, char *buf, socklen_t size)
   inet_ntop(PF_INET, &a, buf, size);
 
   return buf;
+}
+
+/*
+ *  ## 16進ダンプを行う
+ */
+int print_hex(u_int8_t *data, int size)
+{
+  int  i, j;
+
+  for (i = 0; i < size; ) {
+    for (j = 0; j < 16; j++) {
+      if (j != 0) {
+        printf(" ");
+      }
+      if (i + j < size) {
+        printf("%02X", *(data + j));
+      } else {
+         printf("  ");
+      }
+    }
+    printf("    ");
+    for (j = 0; j < 16; j++) {
+      if (i < size) {
+        if (isascii(*data) && isprint(*data)) {
+          printf("%c", *data);
+        } else {
+          printf(".");
+        }
+        data++;  i++;
+      } else {
+        printf(" ");
+      }
+    }
+    printf("\n");
+  }
+
+  return 0;
 }
 
 int PrintEtherHeader(struct ether_header *eh, FILE *fp)

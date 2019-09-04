@@ -176,6 +176,27 @@ int do_napt_tcp(enum packet_direction direction, struct ip *iphdr, struct tcphdr
 {
   struct napt_table_entry *entry;
 
+  /* TODO: test */
+  /*
+  DebugPrintf("===== [NAPT-TCP TABLE] =====\n");
+  int ind = 0;
+  for (int i = 0; i < NAPT_TABLE_SIZE; i++) {
+    struct napt_table_entry *e  = &napt_table_tcp[i];
+    if (e->used == 0) continue;
+    ind++;
+    char buf[80], buf1[80];
+    struct timeval now; gettimeofday(&now, NULL);
+    unsigned int sec = now.tv_sec - e->last_time.tv_sec;
+    unsigned int msec = (now.tv_usec - e->last_time.tv_usec) / 1000;
+    int lst = sec * 1000 + msec;
+    DebugPrintf("%02d | %s:%d --- %s:%d | %d ms\n", ind,
+                                          in_addr_t2str((in_addr_t)e->client_addr, buf, sizeof(buf)), ntohs(e->client_port),
+                                          in_addr_t2str((in_addr_t)ifs[0].addr.s_addr, buf1, sizeof(buf1)), ntohs(e->external_port),
+                                          lst);
+  }
+  DebugPrintf("===== ================ =====\n");
+  */
+
   if (direction == DIRECTION_INCOMING) {
     entry = lookup_napt_tcp(DIRECTION_INCOMING, iphdr->ip_dst.s_addr, tcphdr->dest);
     if (entry == NULL) {
@@ -198,7 +219,7 @@ int do_napt_tcp(enum packet_direction direction, struct ip *iphdr, struct tcphdr
             in_addr_t2str(iphdr->ip_dst.s_addr, buf1, sizeof(buf1)), ntohs(tcphdr->dest));
         return -1;
       }
-      DebugPrintf("[NAPT/TCP] OUTGOING packet from %s:%d is assigned to %s:%d\n\n", 
+      DebugPrintf("[NAPT/TCP] OUTGOING packet is assigned [%s:%d => %s:%d]\n\n", 
           in_addr_t2str(iphdr->ip_src.s_addr, buf, sizeof(buf)), ntohs(tcphdr->source),
           in_addr_t2str(ifs[0].addr.s_addr, buf1, sizeof(buf1)), ntohs(entry->external_port));
     }
@@ -208,7 +229,8 @@ int do_napt_tcp(enum packet_direction direction, struct ip *iphdr, struct tcphdr
   }
 
   tcphdr->check = 0;
-  tcphdr->check = L4checksum(&iphdr->ip_src, &iphdr->ip_dst, iphdr->ip_p, (uint8_t *)tcphdr, dlen);
+  uint16_t cksum = L4checksum(&iphdr->ip_src, &iphdr->ip_dst, iphdr->ip_p, (uint8_t *)tcphdr, dlen);
+  tcphdr->check = cksum;
 
   update_napt_entry(entry);
   return 0;

@@ -16,8 +16,8 @@ enum packet_direction {
   DIRECTION_OUTGOING
 };
 
-#define NAPT_TABLE_SIZE 24
-#define NAPT_TIMEOUT 2000
+#define NAPT_TABLE_SIZE 36
+#define NAPT_TIMEOUT 3000
 
 u_int16_t L4checksum(struct in_addr *saddr, struct in_addr *daddr, u_int8_t proto, u_int8_t *data, int len);
 uint16_t lookup_free_port(struct napt_table_entry *table);

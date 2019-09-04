@@ -7,6 +7,7 @@ char *in_addr_t2str(in_addr_t addr, char *buf, socklen_t size);
 char *ip_ip2str(u_int32_t ip, char *buf, socklen_t size);
 int GetDeviceNames(char (*ifnames)[16], int *ifrn);
 int GetDeviceInfo(char *device, u_char hwaddr[6], struct in_addr *uaddr, struct in_addr *subnet, struct in_addr *mask);
+int print_hex(u_int8_t *data, int size);
 int PrintEtherHeader(struct ether_header *eh, FILE *fp);
 int PrintIpHeader(struct iphdr *iphdr, u_char *option, int optionLen, FILE *fp);
 int print_tcp(struct tcphdr *tcp);

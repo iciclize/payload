@@ -144,7 +144,7 @@ int SendIcmpTimeExceeded(int ifNo, struct ether_header *eh, struct iphdr *iphdr,
 int AnalyzePacket(int ifNo, u_char *data, int size)
 {
   u_char *ptr;
-  int  lest;
+  size_t  lest;
   struct  ether_header *eh;
   char    buf[80];
   int     tno;
@@ -224,8 +224,6 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
       memcpy(option, ptr, optionLen);
       ptr  += optionLen; /* ポインタはIPペイロード */
       lest -= optionLen; /* IPペイロード長 */
-
-      printf("\nIPペイロード(オプションあり)長: %d\n\n", lest);
     }
 
     /* IPチェックサムを検証して壊れたパケットを弾く */
@@ -241,11 +239,31 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
       return -1;
     }
 
+    size_t ip_payload_len = ntohs(iphdr->tot_len) - iphdr->ihl * 4;
+    lest -= ip_payload_len;
+
     /*
      * NAPTする
      */
     if (iphdr->saddr != macbook.s_addr) {
-      DoNAPT(ifNo, (struct ip *)iphdr, ptr, ntohs(iphdr->tot_len) - iphdr->ihl * 4);
+      if (iphdr->protocol == IPPROTO_TCP || iphdr->protocol == IPPROTO_UDP) {
+        /* TODO: test */
+        /*
+        struct ip *ih = (struct ip *)iphdr;
+        char buf[80], buf1[80], buf2[80], buf3[80];
+        uint16_t p, p1, p2, p3;
+        my_inet_ntoa_r(&ih->ip_src, buf, sizeof(buf));
+        my_inet_ntoa_r(&ih->ip_dst, buf1, sizeof(buf1));
+        p = ntohs(((struct tcphdr *)ptr)->source); p1 = ntohs(((struct tcphdr *)ptr)->dest);
+        */
+        DoNAPT(ifNo, (struct ip *)iphdr, ptr, ip_payload_len);
+        /*
+        my_inet_ntoa_r(&ih->ip_src, buf2, sizeof(buf2));
+        my_inet_ntoa_r(&ih->ip_dst, buf3, sizeof(buf3));
+        p2 = ntohs(((struct tcphdr *)ptr)->source); p3 = ntohs(((struct tcphdr *)ptr)->dest);
+        DebugPrintf("[NAPT] [%s:%d => %s:%d] >>> [%s:%d => %s:%d] \n", buf, p, buf2, p2, buf1, p1, buf3, p3);
+        */
+      }
     }
 
     struct routing_table_entry *entry = lookup_route_entry(iphdr->daddr);
@@ -304,8 +322,9 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
     iphdr->check = 0;
     iphdr->check = checksum2((u_char *)iphdr, sizeof(struct iphdr), option, optionLen);
 
+    /*
     fprintf(stderr, " >>>>>>>> Written to %s <<<<<<<<\n", ifs[tno].name);
-    // PrintEtherHeader(eh, stderr);
+    PrintEtherHeader(eh, stderr);
     PrintIpHeader(iphdr, option, optionLen, stderr);
 
     if (iphdr->protocol == 6) {
@@ -314,8 +333,27 @@ int AnalyzePacket(int ifNo, u_char *data, int size)
       print_udp((struct udphdr *)ptr);
     }
 
-    fprintf(stderr, " ===============================\n");
-    write(ifs[tno].sock, data, size);
+    print_hex(data, size - lest);
+    */
+    
+    /*
+    printf("\nlest=%d\n\n", lest);
+    for (unsigned int i = 0; i < size - lest; i ++)
+      printf("%02X ", data[i]);
+    printf("\n");
+    */
+
+    // fprintf(stderr, " ===============================\n");
+
+    write(ifs[tno].sock, data, size - lest);
+
+    /*
+    printf("trailing: ");
+    for (unsigned int i = size - lest; i < size; i++) 
+      printf("%02X ", data[i]);
+    printf("\n");
+    */
+
   }
 
   return 0;
