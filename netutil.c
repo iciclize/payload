@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
+#include <errno.h>
 #include <unistd.h>
+#include <stdarg.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -14,9 +16,38 @@
 #include <netinet/if_ether.h>
 
 #include "netutil.h"
+#include "base.h"
+#include "params.h"
 
-extern int DebugPrintf(char *fmt, ...);
-extern int DebugPerror(char *msg);
+extern PARAM Param;
+
+/*
+ * DebugPrintf
+ * 表示非表示を制御可能なデバッグ用のprintfらしい
+ */
+int DebugPrintf(char *fmt, ...)
+{
+  if (Param.DebugOut) {
+    va_list args;
+
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+  }
+
+  return 0;
+}
+
+/* DebugPerror
+ * 表示非表示を制御可能なデバッグ用のperrorらしい
+ */
+int DebugPerror(char *msg)
+{
+  if (Param.DebugOut)
+    fprintf(stderr, "%s : %s\n", msg, strerror(errno));
+
+  return 0;
+}
 
 int InitRawSocket(char *device, int promiscFlag, int ipOnly)
 {
@@ -485,6 +516,22 @@ int checkIPchecksum(struct iphdr *iphdr, u_char *option, int optionLen)
   else
     return 0;
 }
+
+u_int16_t L4checksum(struct in_addr *saddr, struct in_addr *daddr, u_int8_t proto, u_int8_t *data, int len)
+{
+  struct pseudo_ip  p_ip;
+  u_int16_t  sum;
+
+  memset(&p_ip, 0, sizeof(struct pseudo_ip));
+  p_ip.ip_src.s_addr = saddr->s_addr;
+  p_ip.ip_dst.s_addr = daddr->s_addr;
+  p_ip.ip_p = proto;
+  p_ip.ip_len = htons(len);
+
+  sum = checksum2((u_int8_t *)&p_ip, sizeof(struct pseudo_ip), data, len);
+  return sum;
+}
+
 
 
 typedef struct {

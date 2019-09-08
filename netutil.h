@@ -1,6 +1,9 @@
 #ifndef YJSNPI_NETUTIL_H
 #define YJSNPI_NETUTIL_H
 
+int DebugPrintf(char *fmt, ...);
+int DebugPerror(char *msg);
+
 char *my_ether_ntoa_r(u_char *hwaddr, char *buf, socklen_t size);
 char *my_inet_ntoa_r(struct in_addr *addr, char *buf, socklen_t size);
 char *in_addr_t2str(in_addr_t addr, char *buf, socklen_t size);
@@ -15,6 +18,7 @@ int print_udp(struct udphdr *udp);
 int InitRawSocket(char *device, int promiscFlag, int ipOnly);
 u_int16_t checksum(u_char *data, int len);
 u_int16_t checksum2(u_char *data1, int len1, u_char *data2, int len2);
+u_int16_t L4checksum(struct in_addr *saddr, struct in_addr *daddr, u_int8_t proto, u_int8_t *data, int len);
 int checkIPchecksum(struct iphdr *iphdr, u_char *option, int optionLen);
 int SendArpRequestB(int sock, in_addr_t target_ip, u_char target_mac[6], in_addr_t my_ip, u_char my_mac[6]);
 

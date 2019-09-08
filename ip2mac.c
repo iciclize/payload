@@ -148,8 +148,7 @@ IP2MAC *Ip2Mac(int ifNo, in_addr_t addr, u_char *hwaddr)
   if (ip2mac->flag == FLAG_OK) {
     DebugPrintf("Ip2Mac(%s):OK\n", in_addr_t2str(addr, buf, sizeof(buf)));
     return ip2mac;
-  }
-  else {
+  } else {
     DebugPrintf("Ip2Mac(%s):NG\n", in_addr_t2str(addr, buf, sizeof(buf)));
     DebugPrintf("Ip2Mac(%s):Send Arp Request\n", in_addr_t2str(addr, buf, sizeof(buf)));
     SendArpRequestB(ifs[ifNo].sock, addr, bcast, ifs[ifNo].addr.s_addr, ifs[ifNo].hwaddr);
@@ -187,8 +186,6 @@ int BufferSendOne(int ifNo, IP2MAC *ip2mac)
     }
 
     memcpy(eh.ether_dhost, ip2mac->hwaddr, 6);
-    // TODO: test
-    // memcpy(eh.ether_shost, ifs[ip2mac->ifNo].hwaddr, 6);
 
     memcpy(data, &eh, sizeof(struct ether_header));
 
@@ -204,7 +201,7 @@ int BufferSendOne(int ifNo, IP2MAC *ip2mac)
 
     DebugPrintf("***********************************[%s]\n", ifs[ifNo].name);
     PrintEtherHeader(&eh, stderr);
-    PrintIpHeader(&iphdr, "", 0, stderr);
+    PrintIpHeader(&iphdr, option, optionLen, stderr);
     DebugPrintf("***********************************[%s]\n", ifs[ifNo].name);
   }
 

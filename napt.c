@@ -22,21 +22,6 @@ extern DEVICE *ifs; /* Interfaces */
 struct napt_table_entry napt_table_tcp[NAPT_TABLE_SIZE];
 struct napt_table_entry napt_table_udp[NAPT_TABLE_SIZE];
 
-u_int16_t L4checksum(struct in_addr *saddr, struct in_addr *daddr, u_int8_t proto, u_int8_t *data, int len)
-{
-  struct pseudo_ip  p_ip;
-  u_int16_t  sum;
-
-  memset(&p_ip, 0, sizeof(struct pseudo_ip));
-  p_ip.ip_src.s_addr = saddr->s_addr;
-  p_ip.ip_dst.s_addr = daddr->s_addr;
-  p_ip.ip_p = proto;
-  p_ip.ip_len = htons(len);
-
-  sum = checksum2((u_int8_t *)&p_ip, sizeof(struct pseudo_ip), data, len);
-  return sum;
-}
-
 uint16_t lookup_free_port(struct napt_table_entry *table)
 {
   for (uint16_t i = 32768; i < 61000; i++) {
