@@ -60,7 +60,7 @@ struct yjsnpi_connection {
   enum yjsnpi_status state;
 };
 
-#define YJSNPI_TABLE_SIZE 36
+#define YJSNPI_TABLE_SIZE 64
 
 struct yjsnpi_connection yjsnpi_table[YJSNPI_TABLE_SIZE];
 
@@ -160,6 +160,8 @@ register_yjsnpi_connection(
 void destroy_yjsnpi_connection(struct yjsnpi_connection *connection)
 {
   connection->used = 0;
+  connection->server.yjsnpi_type = YJSNPI_UNKNOWN;
+  connection->response_rp = YJSNPI_HTTP_RESPONSE;
   connection->state = YJSNPI_CLOSED;
 }
 
@@ -203,7 +205,7 @@ void tcp_option_simplify(struct tcphdr *tcphdr)
   }
 }
 
-void _YJSNPI_send(struct yjsnpi_connection *connection, struct ip iphdr, struct tcphdr tcphdr)
+int _YJSNPI_send(struct yjsnpi_connection *connection, struct ip iphdr, struct tcphdr tcphdr)
 {
   int lest = YJSNPI_HTTP_RESPONSE_SIZE - (connection->response_rp - YJSNPI_HTTP_RESPONSE);
   int paylen = (lest >= 1460) ? 1460 : lest;
@@ -228,7 +230,7 @@ void _YJSNPI_send(struct yjsnpi_connection *connection, struct ip iphdr, struct 
   connection->response_rp += paylen;
   connection->client.seq += paylen;
   if (connection->server.yjsnpi_type == YJSNPI_IMAGE_SENT) {
-    c_tcp->fin = 1;
+    return 1;
   }
   c_tcp->check = 0;
   c_tcp->check = L4checksum(&c_ip->ip_src, &c_ip->ip_dst, c_ip->ip_p,
@@ -240,6 +242,7 @@ void _YJSNPI_send(struct yjsnpi_connection *connection, struct ip iphdr, struct 
     connection->state = YJSNPI_FIN_WAIT;
   }
   IpSend(c_ip, (uint8_t *)c_tcp);
+  return 0;
 }
 
 void YJSNPI_inject(enum packet_direction dir, struct yjsnpi_connection *connection,
@@ -275,7 +278,7 @@ void YJSNPI_inject(enum packet_direction dir, struct yjsnpi_connection *connecti
   } else { /* OUTGOING */
     /* TODO: クライアントに偽のACKを送り返す && 偽の画像の続きを送る */
     DebugPrintf("[YJSNPI] Continue to send YJSNPI...\n");
-    _YJSNPI_send(connection, *iphdr, *tcphdr);
+    while ( _YJSNPI_send(connection, *iphdr, *tcphdr) == 0 );
   }
 }
 

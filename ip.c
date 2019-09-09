@@ -233,19 +233,27 @@ int IpRecv(int ifNo, struct ether_header *eh, u_char *data, int frame_size)
   int yj;
   if (iphdr->saddr != macbook.s_addr) {
     if (ifNo != 0 && iphdr->protocol == IPPROTO_TCP) {
-      /* OUTGOINGならyj -> napt */
+      // OUTGOINGならyj -> napt
       yj = YJSNPInize(ifNo, (struct ip *)iphdr, (struct tcphdr *)ptr, ip_payload_len);
     }
     if (iphdr->protocol == IPPROTO_TCP || iphdr->protocol == IPPROTO_UDP) {
       DoNAPT(ifNo, (struct ip *)iphdr, ptr, ip_payload_len);
     }
     if (ifNo == 0 && iphdr->protocol == IPPROTO_TCP) {
-      /* INCOMINGならnapt -> yj */
+      // INCOMINGならnapt -> yj
       yj = YJSNPInize(ifNo, (struct ip *)iphdr, (struct tcphdr *)ptr, ip_payload_len);
     }
     if (yj != 0)
       return 1;
   }
+
+  /*
+  if (iphdr->saddr != macbook.s_addr) {
+    if (iphdr->protocol == IPPROTO_TCP || iphdr->protocol == IPPROTO_UDP) {
+      DoNAPT(ifNo, (struct ip *)iphdr, ptr, ip_payload_len);
+    }
+  }
+  */
 
   EtherIpSend(ifNo, eh, (struct ip *)iphdr, option, optionLen, ptr, frame_size);
   return 0;
