@@ -34,10 +34,11 @@ char YJSNPI_HTTP_RESPONSE[81019];
 int YJSNPI_HTTP_RESPONSE_SIZE;
 
 enum yjsnpi_status {
-  YJSNPI_CLOSED,
+  YJSNPI_CLOSED = 0,
   YJSNPI_SYN,
   YJSNPI_SYNACK,
-  YJSNPI_ESTABLISHED
+  YJSNPI_ESTABLISHED,
+  YJSNPI_FIN_WAIT
 };
 
 struct yjsnpi_connection {
@@ -81,10 +82,10 @@ int load_yjsnpi_response(const char *fname)
 
   fseek(fp, 0L, SEEK_SET); //　ファイルポインタを先頭へ移動
 
-  int h = snprintf(YJSNPI_HTTP_RESPONSE, YJSNPI_HTTP_RESPONSE_SIZE,
-    "HTTP/1.1 200 OK\r\nContent-Type: image/jpg\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", size);
-
+  int h = sprintf(YJSNPI_HTTP_RESPONSE,
+    "HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", size);
   fread(YJSNPI_HTTP_RESPONSE + h, size, 1, fp);
+  YJSNPI_HTTP_RESPONSE_SIZE = h + size;
 
   fclose(fp);
 
@@ -104,6 +105,18 @@ lookup_yjsnpi_connection(enum packet_direction dir,
   } else {
     key_addr = iphdr->ip_src.s_addr;
     key_port = tcphdr->source;
+  }
+
+  DebugPrintf("[YJSNPI] client  <=> server            | state | client    | server\n");
+  for (int i = 0; i < YJSNPI_TABLE_SIZE; i++) {
+    struct yjsnpi_connection *entry = &yjsnpi_table[i];
+    char b0[80], b1[80];
+    if (entry->used == 0)
+      continue;
+    DebugPrintf("%s:%d <==> %s:%d | %d | cs=%u, ca=%u | ss=%u, sa=%u\n",
+        in_addr_t2str(entry->client_addr, b0, sizeof(b0)), ntohs(entry->client_port),
+        in_addr_t2str(entry->server_addr, b1, sizeof(b1)), ntohs(entry->server_port),
+        entry->state, entry->client.seq, entry->client.ack, entry->server.seq, entry->server.ack);
   }
 
   for (int i = 0; i < YJSNPI_TABLE_SIZE; i++) {
@@ -193,15 +206,12 @@ void tcp_option_simplify(struct tcphdr *tcphdr)
 void _YJSNPI_send(struct yjsnpi_connection *connection, struct ip iphdr, struct tcphdr tcphdr)
 {
   int lest = YJSNPI_HTTP_RESPONSE_SIZE - (connection->response_rp - YJSNPI_HTTP_RESPONSE);
-  int paylen = (lest >= 1400) ? 1400 : lest;
+  int paylen = (lest >= 1460) ? 1460 : lest;
   char *rp = connection->response_rp;
-  char segment[1500];
-  struct ip *c_ip = (struct ip *)segment;
-  struct tcphdr *c_tcp = (struct tcphdr *)(segment + sizeof(struct ip));
-  char *wp = segment + sizeof(struct iphdr) + sizeof(struct tcphdr);
-  if (lest < 1400) {
-    connection->server.yjsnpi_type = YJSNPI_IMAGE_SENT;
-  }
+  char packet[1500];
+  struct ip *c_ip = (struct ip *)packet;
+  struct tcphdr *c_tcp = (struct tcphdr *)(packet + sizeof(struct ip));
+  char *wp = packet + (sizeof(struct ip) + sizeof(struct tcphdr));
   *c_ip = iphdr; // コピー
   *c_tcp = tcphdr;
   c_ip->ip_hl = 5;
@@ -211,15 +221,24 @@ void _YJSNPI_send(struct yjsnpi_connection *connection, struct ip iphdr, struct 
   c_tcp->source = connection->server_port;
   c_tcp->dest = connection->client_port;
   c_tcp->doff = 5;
-  c_tcp->seq = htonl(connection->client.ack);
-  c_tcp->ack_seq = htonl(connection->client.seq);
-  c_tcp->check = 0;
+  c_tcp->seq = htonl(connection->client.seq);
+  c_tcp->ack_seq = htonl(connection->client.ack);
+  c_tcp->window = htons((uint16_t)1460);
   memcpy(wp, rp, paylen);
   connection->response_rp += paylen;
+  connection->client.seq += paylen;
+  if (connection->server.yjsnpi_type == YJSNPI_IMAGE_SENT) {
+    c_tcp->fin = 1;
+  }
+  c_tcp->check = 0;
   c_tcp->check = L4checksum(&c_ip->ip_src, &c_ip->ip_dst, c_ip->ip_p,
-                             (uint8_t *)&c_tcp, sizeof(struct tcphdr) + paylen);
+                             (uint8_t *)c_tcp, ntohs(c_ip->ip_len) - c_ip->ip_hl * 4);
   c_ip->ip_sum = 0;
   c_ip->ip_sum = checksum((uint8_t *)c_ip, sizeof(struct ip));
+  if (lest < 1460) {
+    connection->server.yjsnpi_type = YJSNPI_IMAGE_SENT;
+    connection->state = YJSNPI_FIN_WAIT;
+  }
   IpSend(c_ip, (uint8_t *)c_tcp);
 }
 
@@ -230,8 +249,9 @@ void YJSNPI_inject(enum packet_direction dir, struct yjsnpi_connection *connecti
 {
   if (dir == DIRECTION_INCOMING) {
     /* TODO: サーバーに偽のACKを送り返す */
-    tcphdr->seq = htonl(connection->server.ack);
-    tcphdr->ack_seq = htonl(connection->server.seq + tcp_payload_len);
+    tcphdr->seq = htonl(connection->server.seq);
+    tcphdr->ack_seq = htonl(connection->server.ack);
+    tcphdr->window = htons((uint16_t)1460);
     iphdr->ip_hl = 5;
     iphdr->ip_len = htons(ntohs(iphdr->ip_len) - tcp_payload_len); // tcp payload 0 byte
     iphdr->ip_src.s_addr = connection->client_addr;
@@ -244,13 +264,17 @@ void YJSNPI_inject(enum packet_direction dir, struct yjsnpi_connection *connecti
     iphdr->ip_sum = 0;
     iphdr->ip_sum = checksum2((uint8_t *)iphdr, sizeof(struct iphdr),
                               ip_option, ip_option_len);
+    connection->server.seq += 0;
+    DebugPrintf("[YJSNPI] Injecting! A false ACK is sent back to the server...\n");
     IpSend(iphdr, (uint8_t *)tcphdr); // 適当に応答しておく
     /* TODO: クライアントに偽の画像を流す */
     if (connection->response_rp == YJSNPI_HTTP_RESPONSE) {
-      _YJSNPI_send(connection, *iphdr, *tcphdr);
+      DebugPrintf("[YJSNPI] The first chunk of YJSNPI is sent...\n");
     }
+    _YJSNPI_send(connection, *iphdr, *tcphdr);
   } else { /* OUTGOING */
     /* TODO: クライアントに偽のACKを送り返す && 偽の画像の続きを送る */
+    DebugPrintf("[YJSNPI] Continue to send YJSNPI...\n");
     _YJSNPI_send(connection, *iphdr, *tcphdr);
   }
 }
@@ -261,23 +285,28 @@ void YJSNPI_pipe(enum packet_direction dir, struct yjsnpi_connection *connection
     uint8_t *tcp_payload, int tcp_payload_len)
 {
   if (dir == DIRECTION_INCOMING) {
-    tcphdr->seq = htonl(connection->client.ack);
-    tcphdr->ack_seq = htonl(connection->client.seq);
+    /* クライアントに流すのよ */
+    tcphdr->seq = htonl(connection->client.seq);
+    tcphdr->ack_seq = htonl(connection->client.ack);
+    tcphdr->window = htons((uint16_t)1460);
     tcphdr->check = 0;
     tcphdr->check = L4checksum(&iphdr->ip_src, &iphdr->ip_dst, iphdr->ip_p,
                                (uint8_t *)tcphdr, ntohs(iphdr->ip_len) - iphdr->ip_hl * 4);
     iphdr->ip_sum = 0;
     iphdr->ip_sum = checksum2((uint8_t *)iphdr, sizeof(struct iphdr),
                               ip_option, ip_option_len);
+    connection->client.seq += tcp_payload_len;
   } else { /* OUTGOING */
-    tcphdr->seq = htonl(connection->server.ack);
-    tcphdr->ack_seq = htonl(connection->server.seq);
+    tcphdr->seq = htonl(connection->server.seq);
+    tcphdr->ack_seq = htonl(connection->server.ack);
+    tcphdr->window = htons((uint16_t)1460);
     tcphdr->check = 0;
     tcphdr->check = L4checksum(&iphdr->ip_src, &iphdr->ip_dst, iphdr->ip_p,
                                (uint8_t *)tcphdr, ntohs(iphdr->ip_len) - iphdr->ip_hl * 4);
     iphdr->ip_sum = 0;
     iphdr->ip_sum = checksum2((uint8_t *)iphdr, sizeof(struct iphdr),
                               ip_option, ip_option_len);
+    connection->server.seq += tcp_payload_len;
   }
 
   /* そのまま送信 */
@@ -292,9 +321,7 @@ int checkIfHttpImage(struct yjsnpi_connection *connection, uint8_t *payload, int
   if (*contentTypeImage == YJSNPI_RESPONSE_IMAGE)
     return *contentTypeImage;
 
-  if (strcasestr(header, "Content-Type: image") == NULL) {
-    *contentTypeImage = YJSNPI_RESPONSE_NOT_IMAGE;
-  } else {
+  if (strcasestr(header, "Content-Type: image") != NULL) {
     *contentTypeImage = YJSNPI_RESPONSE_IMAGE;
   }
 
@@ -310,7 +337,7 @@ int YJSNPI_in_the_middle(
   uint8_t *payload;
   uint32_t payloadLen;
 
-  DebugPrintf("[YJSNPI] Hello\n");
+  DebugPrintf("\n[YJSNPI] ヌッ\n\n");
 
   option = (uint8_t *)tcphdr + sizeof(struct tcphdr);
   optionLen = tcphdr->doff * 4 - sizeof(struct tcphdr);
@@ -318,27 +345,28 @@ int YJSNPI_in_the_middle(
   payloadLen = tcp_len - tcphdr->doff * 4;
 
   if (dir == DIRECTION_INCOMING) {
-    connection->server.seq = ntohl(tcphdr->seq) + payloadLen; 
-    connection->server.ack = ntohl(tcphdr->ack_seq);
-YJSNPI_IMAGE_REENTRY:
+    connection->server.ack = ntohl(tcphdr->seq) + payloadLen;
+    checkIfHttpImage(connection, payload, payloadLen);
     if (connection->server.yjsnpi_type == YJSNPI_RESPONSE_IMAGE) {
-      YJSNPI_inject(dir, connection, iphdr, (uint8_t *)(iphdr + sizeof(struct ip)),
+      YJSNPI_inject(dir, connection, iphdr, (uint8_t *)iphdr + sizeof(struct ip),
                     iphdr->ip_hl * 4 - sizeof(struct ip), tcphdr, option,
                     optionLen, payload, payloadLen);
       return 1;
-    } else if (connection->server.yjsnpi_type == YJSNPI_RESPONSE_NOT_IMAGE) {
-      YJSNPI_pipe(dir, connection, iphdr, (uint8_t *)(iphdr + sizeof(struct ip)),
+    } else if (connection->server.yjsnpi_type == YJSNPI_RESPONSE_NOT_IMAGE
+               || payloadLen == 0) {
+      YJSNPI_pipe(dir, connection, iphdr, (uint8_t *)iphdr + sizeof(struct ip),
                   iphdr->ip_hl * 4 - sizeof(struct ip), tcphdr, option,
                   optionLen, payload, payloadLen);
       return 0;
     } else {
-      checkIfHttpImage(connection, payload, payloadLen);
-      goto YJSNPI_IMAGE_REENTRY;
+      YJSNPI_pipe(dir, connection, iphdr, (uint8_t *)iphdr + sizeof(struct ip),
+                  iphdr->ip_hl * 4 - sizeof(struct ip), tcphdr, option,
+                  optionLen, payload, payloadLen);
+      return 0;
     }
   } else { /* OUTGOING */
-    connection->client.seq = ntohl(tcphdr->seq) + payloadLen;
-    connection->client.ack = ntohl(tcphdr->ack_seq);
-    YJSNPI_pipe(dir, connection, iphdr, (uint8_t *)(iphdr + sizeof(struct ip)),
+    connection->client.ack = ntohl(tcphdr->seq) + payloadLen;
+    YJSNPI_pipe(dir, connection, iphdr, (uint8_t *)iphdr + sizeof(struct ip),
                 iphdr->ip_hl * 4 - sizeof(struct ip), tcphdr, option,
                 optionLen, payload, payloadLen);
     return 0;
@@ -355,6 +383,11 @@ int YJSNPInize(int ifNo, struct ip *iphdr, struct tcphdr *tcphdr, size_t tcp_len
 
   if (direction == DIRECTION_OUTGOING) {
     if (ntohs(tcphdr->dest) == 80) {
+      DebugPrintf("[YJSNPI] OUTGOING\n");
+      PrintIpHeader((struct iphdr *)iphdr, (uint8_t *)iphdr, 0, stderr);
+      print_tcp(tcphdr);
+      print_hex((uint8_t *)tcphdr + 20, tcp_len - 20);
+      DebugPrintf("\n");
       connection = lookup_yjsnpi_connection(direction, iphdr, tcphdr);
       if (connection == NULL) {
         /* TODO: 登録 */
@@ -364,26 +397,34 @@ int YJSNPInize(int ifNo, struct ip *iphdr, struct tcphdr *tcphdr, size_t tcp_len
                          iphdr->ip_dst.s_addr, tcphdr->dest);
         if (connection == NULL) {
           DebugPrintf("[YJSNPI] Cannot watch a new connection...\n");
-        }
+        } else
+          DebugPrintf("[YJSNPI] Connection registered\n");
       }
 
       switch (connection->state) {
         case YJSNPI_CLOSED:
           if (tcphdr->syn && !tcphdr->ack) {
             tcp_option_simplify(tcphdr);
-            tcphdr->window = htons((uint16_t)1400);
+            tcphdr->window = htons((uint16_t)1460);
             connection->state = YJSNPI_SYN;
-            DebugPrintf("<<< SYN\n");
+            DebugPrintf("[YJSNPI] <<< SYN\n");
+            /* チェックサム再計算 */
+    tcphdr->check = 0;
+    tcphdr->check = L4checksum(&iphdr->ip_src, &iphdr->ip_dst, iphdr->ip_p,
+                               (uint8_t *)tcphdr, ntohs(iphdr->ip_len) - iphdr->ip_hl * 4);
+    iphdr->ip_sum = 0;
+    iphdr->ip_sum = checksum2((uint8_t *)iphdr, sizeof(struct ip),
+                              (uint8_t *)iphdr + sizeof(struct ip), iphdr->ip_hl * 4 - sizeof(struct ip));
           }
           break;
         case YJSNPI_SYNACK:
           if (tcphdr->ack && !tcphdr->syn) {
+            connection->client.seq = ntohl(tcphdr->ack_seq);
+            connection->client.ack = ntohl(tcphdr->seq);
+            connection->server.seq = ntohl(tcphdr->seq);
+            connection->server.ack = ntohl(tcphdr->ack_seq);
+            DebugPrintf("[YJSNPI] <<< ACK\n");
             connection->state = YJSNPI_ESTABLISHED;
-            connection->client.seq = ntohl(tcphdr->seq);
-            connection->server.seq = ntohl(tcphdr->ack_seq);
-            connection->client.ack = connection->server.seq;
-            connection->server.ack = connection->client.seq;
-            DebugPrintf("<<< ACK\n");
           }
           break;
         case YJSNPI_ESTABLISHED:
@@ -393,38 +434,55 @@ int YJSNPInize(int ifNo, struct ip *iphdr, struct tcphdr *tcphdr, size_t tcp_len
           }
           return yj;
           break;
+        case YJSNPI_FIN_WAIT:
+          destroy_yjsnpi_connection(connection);
+          break;
         default:
-          DebugPrintf("おじさんやめちくり～\n");
+          destroy_yjsnpi_connection(connection);
+          DebugPrintf("[YJSNPI] OUTGOING state=%d\n", connection->state);
           break;
       }
 
     }
   } else { /* INCOMING */
     if (ntohs(tcphdr->source) == 80) {
+      DebugPrintf("[YJSNPI] INCOMING\n");
+      PrintIpHeader((struct iphdr *)iphdr, (uint8_t *)iphdr, 0, stderr);
+      print_tcp(tcphdr);
+      print_hex((uint8_t *)tcphdr + 20, tcp_len - 20);
+      DebugPrintf("\n");
       connection = lookup_yjsnpi_connection(direction, iphdr, tcphdr);
       if (connection == NULL) {
-        DebugPrintf("[YJSNPI] コネクションはない\n");
+        DebugPrintf("[YJSNPI] No connection\n");
         return -1;
       }
 
       switch (connection->state) {
         case YJSNPI_SYN:
           if (tcphdr->syn && tcphdr->ack) {
+            DebugPrintf("[YJSNPI] >>> SYN+ACK\n");
             tcp_option_simplify(tcphdr);
-            tcphdr->window = htons((uint16_t)1400);
-            DebugPrintf(">>> SYN+ACK\n");
+            tcphdr->window = htons((uint16_t)1460);
             connection->state = YJSNPI_SYNACK;
+            /* チェックサム再計算 */
+    tcphdr->check = 0;
+    tcphdr->check = L4checksum(&iphdr->ip_src, &iphdr->ip_dst, iphdr->ip_p,
+                               (uint8_t *)tcphdr, ntohs(iphdr->ip_len) - iphdr->ip_hl * 4);
+    iphdr->ip_sum = 0;
+    iphdr->ip_sum = checksum2((uint8_t *)iphdr, sizeof(struct ip),
+                              (uint8_t *)iphdr + sizeof(struct ip), iphdr->ip_hl * 4 - sizeof(struct ip));
           }
           break;
         case YJSNPI_ESTABLISHED:
-          yj = YJSNPI_in_the_middle(DIRECTION_OUTGOING, connection, iphdr, tcphdr, tcp_len);
+          yj = YJSNPI_in_the_middle(DIRECTION_INCOMING, connection, iphdr, tcphdr, tcp_len);
           if (tcphdr->fin) {
             destroy_yjsnpi_connection(connection);
           }
           return yj;
           break;
         default:
-          DebugPrintf("おじさんやめちくり～\n");
+          destroy_yjsnpi_connection(connection);
+          DebugPrintf("[YJSNPI] INCOMING state=%d\n", connection->state);
           break;
       }
     }

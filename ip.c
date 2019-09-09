@@ -128,6 +128,18 @@ int EtherIpSend(int ifNo, struct ether_header *eh, struct ip *iphdr,
     nextAddr.s_addr = entry->gateway;
   }
 
+  // TODO: test
+  struct tcphdr *h = (struct tcphdr *)ip_payload;
+  if (iphdr->ip_p == IPPROTO_TCP) {
+    if (ntohs(h->source) == 80 || ntohs(h->dest) == 80) {
+      DebugPrintf("\n[TCP/IP] Sent\n");
+      PrintIpHeader((struct iphdr *)iphdr, ip_option, ip_option_len, stderr);
+      print_tcp(h);
+      print_hex((uint8_t *)eh, frame_size);
+      DebugPrintf("\n");
+    }
+  }
+
   IP2MAC *ip2mac = Ip2Mac(tno, nextAddr.s_addr, NULL);
 
   if (ip2mac->flag == FLAG_NG || ip2mac->sd.dno != 0) {
@@ -149,14 +161,16 @@ int EtherIpSend(int ifNo, struct ether_header *eh, struct ip *iphdr,
 
 int IpSend(struct ip *iphdr, uint8_t *ip_payload)
 {
-  uint8_t frame[1500];
+  uint8_t frame[1522];
   struct ether_header *eh = (struct ether_header *)frame;
   struct ip *ih = (struct ip *)(frame + sizeof(struct ether_header));
   eh->ether_type = htons(0x0800);
-  *ih = *iphdr;
-  memcpy(ih + (ih->ip_hl * 4), ip_payload, ntohs(ih->ip_len) - ih->ip_hl * 4);
+  *ih = *iphdr; // copy
+  memcpy((ih + 1), ip_payload, ntohs(ih->ip_len) - sizeof(struct ip));
 
-  EtherIpSend(114514, eh, ih, (uint8_t *)(ih + sizeof(struct ip)), ih->ip_hl - sizeof(struct ip), (uint8_t *)(ih + (ih->ip_hl * 4)), sizeof(struct ether_header) + ih->ip_len);
+  EtherIpSend(114514, eh, ih,
+              (uint8_t *)ih + sizeof(struct ip), ih->ip_hl * 4 - sizeof(struct ip), 
+              (uint8_t *)ih + ih->ip_hl * 4, sizeof(struct ether_header) + ntohs(ih->ip_len));
   return 0;
 }
 
@@ -216,15 +230,21 @@ int IpRecv(int ifNo, struct ether_header *eh, u_char *data, int frame_size)
   /*
    * NAPTする
    */
+  int yj;
   if (iphdr->saddr != macbook.s_addr) {
+    if (ifNo != 0 && iphdr->protocol == IPPROTO_TCP) {
+      /* OUTGOINGならyj -> napt */
+      yj = YJSNPInize(ifNo, (struct ip *)iphdr, (struct tcphdr *)ptr, ip_payload_len);
+    }
     if (iphdr->protocol == IPPROTO_TCP || iphdr->protocol == IPPROTO_UDP) {
       DoNAPT(ifNo, (struct ip *)iphdr, ptr, ip_payload_len);
     }
-    if (iphdr->protocol == IPPROTO_TCP) {
-      if (YJSNPInize(ifNo, (struct ip *)iphdr, (struct tcphdr *)ptr, ip_payload_len) != 0) {
-        return 1;
-      }
+    if (ifNo == 0 && iphdr->protocol == IPPROTO_TCP) {
+      /* INCOMINGならnapt -> yj */
+      yj = YJSNPInize(ifNo, (struct ip *)iphdr, (struct tcphdr *)ptr, ip_payload_len);
     }
+    if (yj != 0)
+      return 1;
   }
 
   EtherIpSend(ifNo, eh, (struct ip *)iphdr, option, optionLen, ptr, frame_size);
