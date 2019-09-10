@@ -6,6 +6,8 @@
 #define YJSNPI_IMAGE_SENT 24
 #define YJSNPI_UNKNOWN 19
 
+#define YJSNPI_TIMEOUT 10000
+
 int load_yjsnpi_response(const char *fname);
 int YJSNPInize(int ifNo, struct ip *iphdr, struct tcphdr *tcphdr, size_t tcp_len);
 

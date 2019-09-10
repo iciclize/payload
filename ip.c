@@ -132,11 +132,13 @@ int EtherIpSend(int ifNo, struct ether_header *eh, struct ip *iphdr,
   struct tcphdr *h = (struct tcphdr *)ip_payload;
   if (iphdr->ip_p == IPPROTO_TCP) {
     if (ntohs(h->source) == 80 || ntohs(h->dest) == 80) {
+#ifdef YJSNPI_DEBUG
       DebugPrintf("\n[TCP/IP] Sent\n");
       PrintIpHeader((struct iphdr *)iphdr, ip_option, ip_option_len, stderr);
       print_tcp(h);
       print_hex((uint8_t *)eh, frame_size);
       DebugPrintf("\n");
+#endif /* YJSNPI_DEBUG */
     }
   }
 

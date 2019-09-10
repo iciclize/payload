@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
@@ -57,6 +58,7 @@ struct yjsnpi_connection {
     char yjsnpi_type;
   } server;
   char *response_rp;
+  struct timeval last_access;
   enum yjsnpi_status state;
 };
 
@@ -92,12 +94,41 @@ int load_yjsnpi_response(const char *fname)
   return 0;
 }
 
+void update_yjsnpi_connection(struct yjsnpi_connection *entry)
+{
+  struct timeval now;
+  gettimeofday(&now, NULL);
+  entry->last_access = now;
+}
+
+int validate_yjsnpi_connection(struct timeval *now, struct yjsnpi_connection *entry)
+{
+  extern DEVICE *ifs;
+
+  if (entry->used == 0)
+    return 1;
+
+  unsigned int sec = now->tv_sec - entry->last_access.tv_sec;
+  unsigned int msec = (now->tv_usec - entry->last_access.tv_usec) / 1000;
+  if (sec * 1000 + msec >= YJSNPI_TIMEOUT) {
+    entry->used = 0;
+    char buf[80], buf1[80];
+    DebugPrintf("[YJSNPI] Watch entry [%s:%d === %s:%d] expired.\n",
+        in_addr_t2str(entry->client_addr, buf, sizeof(buf)), ntohs(entry->client_port),
+        in_addr_t2str(ifs[0].addr.s_addr, buf1, sizeof(buf1)), ntohs(entry->server_port));
+    return 1;
+  }
+  return 0;
+}
+
 struct yjsnpi_connection *
 lookup_yjsnpi_connection(enum packet_direction dir,
                          struct ip *iphdr, struct tcphdr *tcphdr)
 {
   in_addr_t key_addr;
   in_port_t key_port;
+  struct timeval now;
+  gettimeofday(&now, NULL);
 
   if (dir == DIRECTION_INCOMING) {
     key_addr = iphdr->ip_dst.s_addr;
@@ -107,6 +138,7 @@ lookup_yjsnpi_connection(enum packet_direction dir,
     key_port = tcphdr->source;
   }
 
+#ifdef YJSNPI_DEBUG
   DebugPrintf("[YJSNPI] client  <=> server            | state | client    | server\n");
   for (int i = 0; i < YJSNPI_TABLE_SIZE; i++) {
     struct yjsnpi_connection *entry = &yjsnpi_table[i];
@@ -118,9 +150,11 @@ lookup_yjsnpi_connection(enum packet_direction dir,
         in_addr_t2str(entry->server_addr, b1, sizeof(b1)), ntohs(entry->server_port),
         entry->state, entry->client.seq, entry->client.ack, entry->server.seq, entry->server.ack);
   }
+#endif /* YJSNPI_DEBUG */
 
   for (int i = 0; i < YJSNPI_TABLE_SIZE; i++) {
     struct yjsnpi_connection *entry = &yjsnpi_table[i];
+    validate_yjsnpi_connection(&now, entry);
     if (entry->used == 0)
       continue;
     if (key_addr == entry->client_addr
@@ -137,13 +171,19 @@ register_yjsnpi_connection(
     in_addr_t client_addr, in_port_t client_port,
     in_addr_t server_addr, in_port_t server_port)
 {
+  struct timeval now;
+  gettimeofday(&now, NULL);
   int index = -1;
-  for (int i = 0; i < YJSNPI_TABLE_SIZE; i++)
-    if (yjsnpi_table[i].used == 0)
+  for (int i = 0; i < YJSNPI_TABLE_SIZE; i++) {
+    validate_yjsnpi_connection(&now, &yjsnpi_table[i]);
+    if (yjsnpi_table[i].used == 0) {
       index = i;
+    }
+  }
   if (index == -1) {
     return NULL;
   }
+  gettimeofday(&now, NULL);
   struct yjsnpi_connection *entry;
   entry = &yjsnpi_table[index];
   entry->client_addr = client_addr;
@@ -153,6 +193,7 @@ register_yjsnpi_connection(
   entry->server.yjsnpi_type = YJSNPI_UNKNOWN;
   entry->response_rp = YJSNPI_HTTP_RESPONSE;
   entry->state = state;
+  entry->last_access = now;
   entry->used = 1;
   return entry;
 }
@@ -220,6 +261,7 @@ int _YJSNPI_send(struct yjsnpi_connection *connection, struct ip iphdr, struct t
   c_ip->ip_len = htons(sizeof(struct ip) + sizeof(struct tcphdr) + paylen);
   c_ip->ip_src.s_addr = connection->server_addr;
   c_ip->ip_dst.s_addr = connection->client_addr;
+  c_tcp->rst = 0;
   c_tcp->source = connection->server_port;
   c_tcp->dest = connection->client_port;
   c_tcp->doff = 5;
@@ -230,17 +272,24 @@ int _YJSNPI_send(struct yjsnpi_connection *connection, struct ip iphdr, struct t
   connection->response_rp += paylen;
   connection->client.seq += paylen;
   if (connection->server.yjsnpi_type == YJSNPI_IMAGE_SENT) {
+    c_tcp->rst = 1;
+    c_tcp->check = 0;
+    c_tcp->check = L4checksum(&c_ip->ip_src, &c_ip->ip_dst, c_ip->ip_p,
+                               (uint8_t *)c_tcp, ntohs(c_ip->ip_len) - c_ip->ip_hl * 4);
+    c_ip->ip_sum = 0;
+    c_ip->ip_sum = checksum((uint8_t *)c_ip, sizeof(struct ip));
+    IpSend(c_ip, (uint8_t *)c_tcp);
+    destroy_yjsnpi_connection(connection);
     return 1;
+  }
+  if (lest < 1460) {
+    connection->server.yjsnpi_type = YJSNPI_IMAGE_SENT;
   }
   c_tcp->check = 0;
   c_tcp->check = L4checksum(&c_ip->ip_src, &c_ip->ip_dst, c_ip->ip_p,
                              (uint8_t *)c_tcp, ntohs(c_ip->ip_len) - c_ip->ip_hl * 4);
   c_ip->ip_sum = 0;
   c_ip->ip_sum = checksum((uint8_t *)c_ip, sizeof(struct ip));
-  if (lest < 1460) {
-    connection->server.yjsnpi_type = YJSNPI_IMAGE_SENT;
-    connection->state = YJSNPI_FIN_WAIT;
-  }
   IpSend(c_ip, (uint8_t *)c_tcp);
   return 0;
 }
@@ -252,8 +301,10 @@ void YJSNPI_inject(enum packet_direction dir, struct yjsnpi_connection *connecti
 {
   if (dir == DIRECTION_INCOMING) {
     /* TODO: サーバーに偽のACKを送り返す */
+    /* TODO: やっぱRST送るわ二度と来んな */
     tcphdr->seq = htonl(connection->server.seq);
     tcphdr->ack_seq = htonl(connection->server.ack);
+    tcphdr->rst = 1;
     tcphdr->window = htons((uint16_t)1460);
     iphdr->ip_hl = 5;
     iphdr->ip_len = htons(ntohs(iphdr->ip_len) - tcp_payload_len); // tcp payload 0 byte
@@ -278,7 +329,9 @@ void YJSNPI_inject(enum packet_direction dir, struct yjsnpi_connection *connecti
   } else { /* OUTGOING */
     /* TODO: クライアントに偽のACKを送り返す && 偽の画像の続きを送る */
     DebugPrintf("[YJSNPI] Continue to send YJSNPI...\n");
-    while ( _YJSNPI_send(connection, *iphdr, *tcphdr) == 0 );
+    // while ( _YJSNPI_send(connection, *iphdr, *tcphdr) == 0 );
+    _YJSNPI_send(connection, *iphdr, *tcphdr);
+    _YJSNPI_send(connection, *iphdr, *tcphdr);
   }
 }
 
@@ -347,6 +400,8 @@ int YJSNPI_in_the_middle(
   payload = (uint8_t *)tcphdr + tcphdr->doff * 4;
   payloadLen = tcp_len - tcphdr->doff * 4;
 
+  update_yjsnpi_connection(connection);
+
   if (dir == DIRECTION_INCOMING) {
     connection->server.ack = ntohl(tcphdr->seq) + payloadLen;
     checkIfHttpImage(connection, payload, payloadLen);
@@ -387,10 +442,12 @@ int YJSNPInize(int ifNo, struct ip *iphdr, struct tcphdr *tcphdr, size_t tcp_len
   if (direction == DIRECTION_OUTGOING) {
     if (ntohs(tcphdr->dest) == 80) {
       DebugPrintf("[YJSNPI] OUTGOING\n");
+#ifdef YJSNPI_DEBUG
       PrintIpHeader((struct iphdr *)iphdr, (uint8_t *)iphdr, 0, stderr);
       print_tcp(tcphdr);
       print_hex((uint8_t *)tcphdr + 20, tcp_len - 20);
       DebugPrintf("\n");
+#endif /* YJSNPI_DEBUG */
       connection = lookup_yjsnpi_connection(direction, iphdr, tcphdr);
       if (connection == NULL) {
         /* TODO: 登録 */
@@ -450,10 +507,12 @@ int YJSNPInize(int ifNo, struct ip *iphdr, struct tcphdr *tcphdr, size_t tcp_len
   } else { /* INCOMING */
     if (ntohs(tcphdr->source) == 80) {
       DebugPrintf("[YJSNPI] INCOMING\n");
+#ifdef YJSNPI_DEBUG
       PrintIpHeader((struct iphdr *)iphdr, (uint8_t *)iphdr, 0, stderr);
       print_tcp(tcphdr);
       print_hex((uint8_t *)tcphdr + 20, tcp_len - 20);
       DebugPrintf("\n");
+#endif /* YJSNPI_DEBUG */
       connection = lookup_yjsnpi_connection(direction, iphdr, tcphdr);
       if (connection == NULL) {
         DebugPrintf("[YJSNPI] No connection\n");

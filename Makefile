@@ -1,6 +1,6 @@
 OBJS=main.o netutil.o ip2mac.o sendBuf.o napt.o routes.o params.o ip.o yjsnpi.o
 SRCS=$(OBJS:%.o=%.c)
-CFLAGS=-g -Wall
+CFLAGS=-g -Wall -DYJSNPI_DEBUG
 LDLIBS=-lpthread
 TARGET=router
 $(TARGET):$(OBJS)
